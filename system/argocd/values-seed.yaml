@@ -15,12 +15,12 @@ argocd-apps:
     root:
       generators:
         - git:
-            repoURL: &repoURL https://github.com/khuedoan/homelab
+            repoURL: &repoURL https://github.com/jkoperdraat/homelab
             revision: &revision master
             directories:
               - path: system/*
-              - path: platform/*
-              - path: apps/*
+#              - path: platform/*
+#              - path: apps/*
       template:
         spec:
           source:
