@@ -19,7 +19,7 @@ argocd-apps:
             revision: &revision master
             directories:
               - path: system/*
-#              - path: platform/*
+              - path: platform/*
 #              - path: apps/*
       template:
         spec:

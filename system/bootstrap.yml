@@ -17,6 +17,14 @@
           - status.phase=Running
       register: first_install
 
+    - name: Debug first_install
+      debug:
+        var: first_install
+
+    - name: Show which values file will be used
+      debug:
+        msg: "Using {{ (first_install.resources | length == 0) | ternary('values-seed.yaml', 'values.yaml') }}"
+
     - name: Render ArgoCD manifests from Helm chart
       kubernetes.core.helm_template:
         chart_ref: ./argocd
@@ -27,6 +35,11 @@
         values_files:
           - "argocd/{{ (first_install.resources | length == 0) | ternary('values-seed.yaml', 'values.yaml') }}"
       register: argocd_manifests
+
+    - name: Write manifests to file for debugging
+      copy:
+        content: "{{ argocd_manifests.stdout }}"
+        dest: /tmp/argocd-rendered.yaml
 
     - name: Apply ArgoCD manifests
       kubernetes.core.k8s:
