@@ -1,7 +1,8 @@
 .POSIX:
 .PHONY: plan apply
 
-export KUBE_CONFIG_PATH = $(shell pwd)/../../metal/kubeconfig.yaml
+export KUBECONFIG = $(shell pwd)/../../metal/kubeconfig.yaml
+export KUBE_CONFIG_PATH = $(KUBECONFIG)
 
 default: apply
 

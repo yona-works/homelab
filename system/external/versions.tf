@@ -1,12 +1,12 @@
 terraform {
   required_version = "~> 1.7"
 
-  backend "remote" {
+  cloud {
     hostname     = "app.terraform.io"
-    organization = "yona-works"
+    organization = "jnskt"
 
     workspaces {
-      name = "homelab-external"
+      name = "homelab-system-external"
     }
   }
 
