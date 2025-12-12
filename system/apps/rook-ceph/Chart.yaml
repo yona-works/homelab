@@ -13,19 +13,3 @@ dependencies:
   - name: snapshot-controller
     version: 4.2.0
     repository: https://piraeus.io/helm-charts
-
-
-  - lastTransitionTime: "2025-12-10T22:29:15Z"
-      message: 'Some resources are remaining: cephblockpools.ceph.rook.io has 1 resource
-      instances, cephclusters.ceph.rook.io has 1 resource instances, cephfilesystems.ceph.rook.io
-      has 1 resource instances, cephfilesystemsubvolumegroups.ceph.rook.io has 1 resource
-      instances, configmaps. has 1 resource instances, secrets. has 1 resource instances'
-      reason: SomeResourcesRemain
-      status: "True"
-      type: NamespaceContentRemaining
-      - lastTransitionTime: "2025-12-10T22:29:15Z"
-        message: 'Some content in the namespace has finalizers remaining: ceph.rook.io/disaster-protection
-      in 2 resource instances, cephblockpool.ceph.rook.io in 1 resource instances,
-      cephcluster.ceph.rook.io in 1 resource instances, cephfilesystem.ceph.rook.io
-      in 1 resource instances, cephfilesystemsubvolumegroup.ceph.rook.io in 1 resource
-      instances'
