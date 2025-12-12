@@ -6,7 +6,7 @@ terraform {
     organization = "yona-works"
 
     workspaces {
-      name = "homelab-external"
+      name = "homelab-platform-external"
     }
   }
 
