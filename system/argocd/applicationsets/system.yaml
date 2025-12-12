@@ -9,9 +9,7 @@ spec:
         repoURL: &repoURL https://github.com/jonaskoperdraat/homelab
         revision: &revision master
         directories:
-          - path: system/*
-          - exclude: true
-            path: system/argocd
+          - path: system/apps/*
   template:
     metadata:
       name: '{{path.basename}}'
