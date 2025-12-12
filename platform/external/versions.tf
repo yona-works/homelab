@@ -1,9 +1,9 @@
 terraform {
   required_version = "~> 1.7"
 
-  backend "remote" {
+  cloud {
     hostname     = "app.terraform.io"
-    organization = "yona-works"
+    organization = "jnskt"
 
     workspaces {
       name = "homelab-platform-external"
@@ -24,6 +24,4 @@ terraform {
 }
 
 provider "kubernetes" {
-  # Use KUBE_CONFIG_PATH environment variables
-  # Or in cluster service account
 }

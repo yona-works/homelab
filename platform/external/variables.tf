@@ -1,3 +1,4 @@
+
 variable "ntfy" {
   type = object({
     url   = string
