@@ -1,5 +1,8 @@
 .POSIX:
 
+export KUBECONFIG = $(shell pwd)/../../metal/kubeconfig.yaml
+export KUBE_CONFIG_PATH = $KUBECONFIG
+
 default: apply
 
 ~/.terraform.d/credentials.tfrc.json:
@@ -13,11 +16,8 @@ terraform.tfvars:
 	tofu init
 	touch ${@}
 
-namespaces:
-	ansible-playbook namespaces.yml
-
 plan: .terraform.lock.hcl
 	tofu plan
 
-apply: .terraform.lock.hcl namespaces
+apply: .terraform.lock.hcl
 	tofu apply -auto-approve
