@@ -41,10 +41,16 @@
       length: 32
       special: false
 
-
 # Paperless
 - name: paperless.admin
   data:
     - key: PAPERLESS_ADMIN_PASSWORD
       length: 32
       special: true
+
+# Renovate
+- name: gitea.renovate
+  data:
+    - key: token
+      length: 32
+      special: false
