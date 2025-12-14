@@ -30,6 +30,17 @@
     - key: secret
       length: 32
       special: false
+- name: gitea.woodpecker
+  data:
+    - key: client_id
+      length: 32
+      special: false
+- name: gitea.woodpecker
+  data:
+    - key: client_secret
+      length: 32
+      special: false
+
 
 # Paperless
 - name: paperless.admin
