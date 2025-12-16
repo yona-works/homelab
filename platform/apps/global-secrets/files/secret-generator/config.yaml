@@ -16,16 +16,16 @@
     - key: client_secret
       length: 32
       special: false
-- name: kanidm.dex
-  data:
-    - key: client_id
-      length: 32
-      special: false
-- name: kanidm.dex
-  data:
-    - key: client_secret
-      length: 32
-      special: false
+#- name: kanidm.dex
+#  data:
+#    - key: client_id
+#      length: 32
+#      special: false
+#- name: kanidm.dex
+#  data:
+#    - key: client_secret
+#      length: 32
+#      special: false
 
 # Registry
 - name: registry.admin
@@ -40,16 +40,16 @@
     - key: secret
       length: 32
       special: false
-- name: gitea.woodpecker
-  data:
-    - key: client_id
-      length: 32
-      special: false
-- name: gitea.woodpecker
-  data:
-    - key: client_secret
-      length: 32
-      special: false
+#- name: gitea.woodpecker
+#  data:
+#    - key: client_id
+#      length: 32
+#      special: false
+#- name: gitea.woodpecker
+#  data:
+#    - key: client_secret
+#      length: 32
+#      special: false
 
 # Paperless
 - name: paperless.admin
@@ -57,10 +57,10 @@
     - key: PAPERLESS_ADMIN_PASSWORD
       length: 32
       special: true
-
-# Renovate
-- name: gitea.renovate
-  data:
-    - key: token
-      length: 32
-      special: false
+#
+## Renovate
+#- name: gitea.renovate
+#  data:
+#    - key: token
+#      length: 32
+#      special: false
