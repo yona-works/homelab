@@ -31,10 +31,7 @@ func getK8sClient() *kubernetes.Clientset {
 		panic(err.Error())
 	}
 
-	k8sClient, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		panic(err.Error())
-	}
+	k8sClient := kubernetes.NewForConfigOrDie(config)
 	fmt.Println("Connected to Kubernetes cluster")
 	return k8sClient
 }
