@@ -6,10 +6,13 @@ import (
 	"os"
 
 	"code.gitea.io/sdk/gitea"
-	"git.yona.works/ops/homelab/gitea/handlers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
+
+type SecretHandler interface {
+	Start(client *kubernetes.Clientset, giteaClient *gitea.Client, stopCh <-chan struct{})
+}
 
 func main() {
 	fmt.Println("Gitea janitor service started")
@@ -56,8 +59,8 @@ func startWorkers(k8sClient *kubernetes.Clientset, giteaClient *gitea.Client) {
 	defer close(stopCh)
 
 	// List of handlers to start
-	workerHandlers := []handlers.SecretHandler{
-		&handlers.TokenRequestHandler{},
+	workerHandlers := []SecretHandler{
+		&TokenRequestHandler{},
 	}
 
 	for _, h := range workerHandlers {
