@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitea-janitor-source
+  namespace: {{ .Release.Namespace }}
+data:
+{{ (.Files.Glob "files/janitor/**").AsConfig | indent 2 }}

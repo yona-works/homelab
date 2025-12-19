@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea-janitor
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitea-janitor
+  template:
+    metadata:
+      labels:
+        app: gitea-janitor
+      annotations:
+        # Correctly hashes the source code folder
+        checksum/config: {{ .Files.Glob "files/janitor/**" | dump | sha256sum }}
+    spec:
+      serviceAccountName: gitea-janitor
+      containers:
+        - name: janitor
+          image: golang:1.19-alpine
+          env:
+            - name: GITEA_HOST
+              value: http://gitea-http:3000
+            - name: GITEA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-admin-secret
+                  key: username
+            - name: GITEA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-admin-secret
+                  key: password
+          workingDir: /go/src/gitea-janitor
+          command: ["sh", "-c"]
+          args:
+            - |
+              go get .
+              go run .
+          volumeMounts:
+            - name: source
+              mountPath: /go/src/gitea-config
+      volumes:
+        - name: source
+          configMap:
+            name: gitea-janitor-source
