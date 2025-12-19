@@ -14,7 +14,7 @@ spec:
         app: gitea-janitor
       annotations:
         # Correctly hashes the source code folder
-        checksum/config: {{ .Files.Glob "files/janitor/**" | dump | sha256sum }}
+        checksum/config: {{ include (print $.Template.BasePath "/janitor-source.yaml") . | sha256sum }}
     spec:
       serviceAccountName: gitea-janitor
       containers:
