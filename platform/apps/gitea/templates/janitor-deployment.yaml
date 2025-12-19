@@ -41,7 +41,7 @@ spec:
               go run .
           volumeMounts:
             - name: source
-              mountPath: /go/src/gitea-config
+              mountPath: /go/src/gitea-janitor
       volumes:
         - name: source
           configMap:
