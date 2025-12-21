@@ -107,9 +107,9 @@ func (h *TokenRequestHandler) handle(k8sClient *kubernetes.Clientset, giteaClien
 	// split permissions into a map of routes to read/write permissions
 	scopes := parseScopes(scopesStr)
 
-	hash := sha256.Sum256([]byte(name + scopesStr))
+	hash := h.hash(name, scopesStr)
 
-	if secret.Labels[annProcessedHash] == fmt.Sprintf("%x", hash) {
+	if secret.Annotations[annProcessedHash] == fmt.Sprintf("%x", hash) {
 		fmt.Printf("Token request for secret %s/%s is already processed, skipping\n", secret.Namespace, secret.Name)
 		return nil
 	}
@@ -140,7 +140,7 @@ func (h *TokenRequestHandler) handle(k8sClient *kubernetes.Clientset, giteaClien
 	// Update secret with the token value
 	secret.Data["token"] = []byte(token.Token)
 	// Add hash
-	secret.Labels[annProcessedHash] = fmt.Sprintf("%x", hash)
+	secret.Annotations[annProcessedHash] = fmt.Sprintf("%x", hash)
 
 	_, err = k8sClient.CoreV1().Secrets(secret.Namespace).Update(context.Background(), secret, metav1.UpdateOptions{})
 	if err != nil {
@@ -148,6 +148,13 @@ func (h *TokenRequestHandler) handle(k8sClient *kubernetes.Clientset, giteaClien
 	}
 	fmt.Printf("Updated secret: %s/%s\n", secret.Namespace, secret.Name)
 	return nil
+}
+
+func (h *TokenRequestHandler) hash(name string, scopesStr string) string {
+	data := fmt.Sprintf("%s:%s", name, scopesStr)
+	hash := sha256.Sum256([]byte(data))
+	hexHash := fmt.Sprintf("%x", hash)
+	return hexHash[:63]
 }
 
 func parseScopes(permissions string) []gitea.AccessTokenScope {
