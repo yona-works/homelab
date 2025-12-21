@@ -18,6 +18,8 @@ from rich.console import Console
 from kubernetes import client, config
 from kubernetes.stream import stream
 
+console = Console()
+
 # https://git.khuedoan.com/user/settings/applications
 # Doing this properly inside the cluster requires:
 # - Kubernetes service account
@@ -46,38 +48,6 @@ def apply_secret(name: str, namespace: str, data: dict) -> None:
             data=data,
         )
         client.CoreV1Api().create_namespaced_secret(namespace, new_secret)
-
-def setup_gitea_access_token(name: str, scopes: list[str]) -> None:
-    current_tokens = requests.get(
-        url=f"{gitea_url}/api/v1/users/{gitea_user}/tokens",
-        auth=(gitea_user,gitea_pass),
-    ).json()
-
-    if not any(token['name'] == name for token in current_tokens):
-        resp = requests.post(
-            url=f"{gitea_url}/api/v1/users/{gitea_user}/tokens",
-            auth=(gitea_user,gitea_pass),
-            headers={
-                'Content-Type': 'application/json'
-            },
-            data=json.dumps({
-                'name': name,
-                'scopes': scopes
-            })
-        )
-
-        if resp.status_code == 201:
-            apply_secret(
-                f"gitea.{name}",
-                "global-secrets",
-                {
-                    'token': base64.b64encode(resp.json()['sha1'].encode("utf-8")).decode("utf-8")
-                }
-            )
-        else:
-            print(f"Error creating access token {name} ({resp.status_code})")
-            print(resp.content)
-            sys.exit(1)
 
 def setup_gitea_oauth_app(name: str, redirect_uri: str) -> None:
     # TODO use the new global application, while it's there in the UI, there's no API yet.
@@ -181,7 +151,7 @@ def setup_kanidm_oauth_app(name: str, redirect_uri: str) -> None:
 
     # TODO https://github.com/dexidp/dex/pull/3188
     subprocess.run(
-        ["kanidm", "system", "oauth2", "warning-insecure-client-disable-pkce", "--url", f"https://{kanidm_host}", "--name", "idm_admin", name],
+            ["kanidm", "system", "oauth2", "warning-insecure-client-disable-pkce", "--url", f"https://{kanidm_host}", "--name", "idm_admin", name],
         capture_output=True,
         check=True,
     )
@@ -209,19 +179,7 @@ def setup_kanidm_oauth_app(name: str, redirect_uri: str) -> None:
     )
 
 def main() -> None:
-    with Console().status("Completing the remaining sorcery"):
-        gitea_access_tokens = [
-            {
-                'name': 'renovate',
-                'scopes': [
-                    "write:repository",
-                    "read:user",
-                    "write:issue",
-                    "read:organization",
-                    "read:misc"
-                ]
-            }
-        ]
+    with console.status("Completing the remaining sorcery"):
 
         gitea_oauth_apps = [
             {'name': 'woodpecker', 'redirect_uri': f"https://{client.NetworkingV1Api().read_namespaced_ingress('woodpecker-server', 'woodpecker').spec.rules[0].host}/authorize"},
@@ -236,12 +194,11 @@ def main() -> None:
             {'name': 'dex', 'redirect_uri': f"https://{client.NetworkingV1Api().read_namespaced_ingress('dex', 'dex').spec.rules[0].host}/callback"},
         ]
 
-        for token in gitea_access_tokens:
-            setup_gitea_access_token(token['name'], token['scopes'])
-
+        # set up oauth apps in gitea (woodpecker)
         for app in gitea_oauth_apps:
             setup_gitea_oauth_app(app['name'], app['redirect_uri'])
 
+        # set up dex as an authentication source in gitea (why not woodpecker?)
         setup_gitea_auth_with_dex()
 
         kanidm_login(["admin", "idm_admin"])
