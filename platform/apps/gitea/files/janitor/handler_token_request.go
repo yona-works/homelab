@@ -29,8 +29,9 @@ The secret must have the following annotations:
 
 The token value will be stored in the "token" key of the secret's data field.
 
-If a token with the given name already exists, it will be deleted and replaced with a new one.
-This allows this mechanism to be used to rotate tokens without having to change the name of the token.
+If a token with the given name, but different scopes already exists, it will be deleted and replaced with a new one.
+This handler stores a hash with the secret (annotation git.yona.works/processed-hash) in order to determine if the secret
+needs to be processed again. The secret can be rotated by deleting this annotation.
 */
 type TokenRequestHandler struct{}
 
