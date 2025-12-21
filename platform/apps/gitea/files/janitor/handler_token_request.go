@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"strings"
@@ -33,6 +34,11 @@ This allows this mechanism to be used to rotate tokens without having to change 
 */
 type TokenRequestHandler struct{}
 
+const lblRequestAccessToken = "git.yona.works/request=access-token"
+const annTokenName = "git.yona.works/request-access-token-name"
+const annTokenScopes = "git.yona.works/request-access-token-scopes"
+const annProcessedHash = "git.yona.works/processed-hash"
+
 func (h *TokenRequestHandler) Start(k8sClient *kubernetes.Clientset, giteaClient *gitea.Client, stopCh <-chan struct{}) {
 	fmt.Println("Starting Token Request Worker...")
 
@@ -55,7 +61,7 @@ func (h *TokenRequestHandler) Start(k8sClient *kubernetes.Clientset, giteaClient
 	// Informer logic
 	factory := informers.NewSharedInformerFactoryWithOptions(k8sClient, time.Minute*10,
 		informers.WithTweakListOptions(func(options *metav1.ListOptions) {
-			options.LabelSelector = "git.yona.works/request=access-token"
+			options.LabelSelector = lblRequestAccessToken
 		}),
 	)
 
@@ -87,19 +93,26 @@ func (h *TokenRequestHandler) handle(k8sClient *kubernetes.Clientset, giteaClien
 	// git.yona.works/request/access-token/name=<string>
 	// git.yona.works/request/access-token/permissions=scope[,...]
 
-	name := secret.Annotations["git.yona.works/request-access-token-name"]
+	name := secret.Annotations[annTokenName]
 	// name should be a valid identifier, e.g., alphanumeric with hyphens
 	if name == "" {
 		return fmt.Errorf("missing required annotation 'git.yona.works/request-access-token-name'")
 	}
 
-	scopesStr := secret.Annotations["git.yona.works/request-access-token-scopes"]
+	scopesStr := secret.Annotations[annTokenScopes]
 	// permissions should be present
 	if scopesStr == "" {
 		return fmt.Errorf("missing required annotation 'git.yona.works/request-access-token-scopes'")
 	}
 	// split permissions into a map of routes to read/write permissions
 	scopes := parseScopes(scopesStr)
+
+	hash := sha256.Sum256([]byte(name + scopesStr))
+
+	if secret.Labels[annProcessedHash] == fmt.Sprintf("%x", hash) {
+		fmt.Printf("Token request for secret %s/%s is already processed, skipping\n", secret.Namespace, secret.Name)
+		return nil
+	}
 
 	fmt.Printf("Checking for existing token with name %s\n", name)
 	tokens, _, err := giteaClient.ListAccessTokens(gitea.ListAccessTokensOptions{})
@@ -126,8 +139,9 @@ func (h *TokenRequestHandler) handle(k8sClient *kubernetes.Clientset, giteaClien
 
 	// Update secret with the token value
 	secret.Data["token"] = []byte(token.Token)
-	// Remove the request label, preventing it from being picked up by this worker again
-	delete(secret.Labels, "git.yona.works/request")
+	// Add hash
+	secret.Labels[annProcessedHash] = fmt.Sprintf("%x", hash)
+
 	_, err = k8sClient.CoreV1().Secrets(secret.Namespace).Update(context.Background(), secret, metav1.UpdateOptions{})
 	if err != nil {
 		return err
