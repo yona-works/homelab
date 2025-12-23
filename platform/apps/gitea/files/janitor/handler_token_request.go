@@ -38,6 +38,7 @@ type TokenRequestHandler struct{}
 const lblRequestAccessToken = "git.yona.works/request=access-token"
 const annTokenName = "git.yona.works/request-access-token-name"
 const annTokenScopes = "git.yona.works/request-access-token-scopes"
+const annSecretDataKey = "git.yona.works/request-access-token-secret-data-key"
 const annProcessedHash = "git.yona.works/processed-hash"
 
 func (h *TokenRequestHandler) Start(k8sClient *kubernetes.Clientset, giteaClient *gitea.Client, stopCh <-chan struct{}) {
@@ -115,6 +116,11 @@ func (h *TokenRequestHandler) handle(k8sClient *kubernetes.Clientset, giteaClien
 		return nil
 	}
 
+	secretDataKey := secret.Annotations[annSecretDataKey]
+	if secretDataKey == "" {
+		secretDataKey = "token"
+	}
+
 	fmt.Printf("Checking for existing token with name %s\n", name)
 	tokens, _, err := giteaClient.ListAccessTokens(gitea.ListAccessTokensOptions{})
 	for _, token := range tokens {
@@ -139,7 +145,7 @@ func (h *TokenRequestHandler) handle(k8sClient *kubernetes.Clientset, giteaClien
 	fmt.Printf("Token %s created with scopes: %v\n", token.Name, token.Scopes)
 
 	// Update secret with the token value
-	secret.Data["token"] = []byte(token.Token)
+	secret.Data[secretDataKey] = []byte(token.Token)
 	// Add hash
 	secret.Annotations[annProcessedHash] = fmt.Sprintf("%x", hash)
 
