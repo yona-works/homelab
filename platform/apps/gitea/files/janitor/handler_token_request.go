@@ -121,6 +121,8 @@ func (h *TokenRequestHandler) handle(k8sClient *kubernetes.Clientset, giteaClien
 		secretDataKey = "token"
 	}
 
+	fmt.Printf("Storing token value on in secret in '$.Data.%s'", secretDataKey)
+
 	fmt.Printf("Checking for existing token with name %s\n", name)
 	tokens, _, err := giteaClient.ListAccessTokens(gitea.ListAccessTokensOptions{})
 	for _, token := range tokens {
