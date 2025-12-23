@@ -121,7 +121,7 @@ func (h *TokenRequestHandler) handle(k8sClient *kubernetes.Clientset, giteaClien
 		secretDataKey = "token"
 	}
 
-	fmt.Printf("Storing token value on in secret in '$.Data.%s'", secretDataKey)
+	fmt.Printf("Storing token value on in secret in '$.Data.%s'\n", secretDataKey)
 
 	fmt.Printf("Checking for existing token with name %s\n", name)
 	tokens, _, err := giteaClient.ListAccessTokens(gitea.ListAccessTokensOptions{})
@@ -145,17 +145,21 @@ func (h *TokenRequestHandler) handle(k8sClient *kubernetes.Clientset, giteaClien
 	}
 
 	fmt.Printf("Token %s created with scopes: %v\n", token.Name, token.Scopes)
+	updatedSecret := secret.DeepCopy()
 
+	if updatedSecret.Data == nil {
+		updatedSecret.Data = make(map[string][]byte)
+	}
 	// Update secret with the token value
-	secret.Data[secretDataKey] = []byte(token.Token)
+	updatedSecret.Data[secretDataKey] = []byte(token.Token)
 	// Add hash
-	secret.Annotations[annProcessedHash] = fmt.Sprintf("%x", hash)
+	updatedSecret.Annotations[annProcessedHash] = fmt.Sprintf("%x", hash)
 
-	_, err = k8sClient.CoreV1().Secrets(secret.Namespace).Update(context.Background(), secret, metav1.UpdateOptions{})
+	_, err = k8sClient.CoreV1().Secrets(updatedSecret.Namespace).Update(context.Background(), updatedSecret, metav1.UpdateOptions{})
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Updated secret: %s/%s\n", secret.Namespace, secret.Name)
+	fmt.Printf("Updated secret: %s/%s\n", updatedSecret.Namespace, updatedSecret.Name)
 	return nil
 }
 
