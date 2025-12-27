@@ -14,13 +14,15 @@ woodpecker:
       WOODPECKER_GITEA: true
       WOODPECKER_GITEA_URL: https://git.yona.works
       WOODPECKER_GITEA_CLIENT:
-        secretKeyRef:
-          name: woodpecker-gitea-secret
-          key: WOODPECKER_GITEA_CLIENT
+        valueFrom:
+          secretKeyRef:
+            name: woodpecker-gitea-secret
+            key: WOODPECKER_GITEA_CLIENT
       WOODPECKER_GITEA_SECRET:
-        secretKeyRef:
-          name: woodpecker-gitea-secret
-          key: WOODPECKER_GITEA_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: woodpecker-gitea-secret
+            key: WOODPECKER_GITEA_SECRET
       WOODPECKER_OPEN: true
       WOODPECKER_ADMIN: gitea_admin
     ingress:
