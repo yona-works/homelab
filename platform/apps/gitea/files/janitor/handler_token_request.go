@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"log"
 	"strings"
@@ -27,22 +26,19 @@ The secret must have the following annotations:
   - git.yona.works/request-access-token-scopes: a comma-separated list of scopes to request.
     See: https://docs.gitea.com/next/development/api-usage#token-api for documentation on token scopes.
 
-The token value will be stored in the "token" key of the secret's data field.
-
 If a token with the given name, but different scopes already exists, it will be deleted and replaced with a new one.
 This handler stores a hash with the secret (annotation git.yona.works/processed-hash) in order to determine if the secret
 needs to be processed again. The secret can be rotated by deleting this annotation.
 */
 type TokenRequestHandler struct{}
 
-const lblRequestAccessToken = "git.yona.works/request=access-token"
-const annTokenName = "git.yona.works/request-access-token-name"
-const annTokenScopes = "git.yona.works/request-access-token-scopes"
-const annSecretDataKey = "git.yona.works/request-access-token-secret-data-key"
-const annProcessedHash = "git.yona.works/processed-hash"
+const lblRequestAccessToken = requestBase + "=access-token"
+const annTokenName = requestBase + "-access-token-name"
+const annTokenScopes = requestBase + "-access-token-scopes"
+const annSecretDataKey = requestBase + "-access-token-secret-data-key"
 
 func (h *TokenRequestHandler) Start(k8sClient *kubernetes.Clientset, giteaClient *gitea.Client, stopCh <-chan struct{}) {
-	fmt.Println("Starting Token Request Worker...")
+	fmt.Println("Starting Token request worker...")
 
 	ch := make(chan *corev1.Secret, 100)
 
@@ -52,7 +48,7 @@ func (h *TokenRequestHandler) Start(k8sClient *kubernetes.Clientset, giteaClient
 			select {
 			case secret := <-ch:
 				if err := h.handle(k8sClient, giteaClient, secret); err != nil {
-					log.Printf("Error handling access-token: %v", err)
+					log.Printf("Error handling access-token request: %v", err)
 				}
 			case <-stopCh:
 				return
@@ -109,7 +105,7 @@ func (h *TokenRequestHandler) handle(k8sClient *kubernetes.Clientset, giteaClien
 	// split permissions into a map of routes to read/write permissions
 	scopes := parseScopes(scopesStr)
 
-	hash := h.hash(name, scopesStr)
+	hash := hash(name, scopesStr)
 
 	if secret.Annotations[annProcessedHash] == fmt.Sprintf("%x", hash) {
 		fmt.Printf("Token request for secret %s/%s is already processed, skipping\n", secret.Namespace, secret.Name)
@@ -124,7 +120,11 @@ func (h *TokenRequestHandler) handle(k8sClient *kubernetes.Clientset, giteaClien
 	fmt.Printf("Storing token value on in secret in '$.Data.%s'\n", secretDataKey)
 
 	fmt.Printf("Checking for existing token with name %s\n", name)
-	tokens, _, err := giteaClient.ListAccessTokens(gitea.ListAccessTokensOptions{})
+	tokens, err := ListAll(func(opts gitea.ListOptions) ([]*gitea.AccessToken, *gitea.Response, error) {
+		return giteaClient.ListAccessTokens(
+			gitea.ListAccessTokensOptions{ListOptions: opts})
+	})
+
 	for _, token := range tokens {
 		if token.Name == name {
 			fmt.Printf("Token %s already exists, recreating with desired permissions\n", name)
@@ -161,13 +161,6 @@ func (h *TokenRequestHandler) handle(k8sClient *kubernetes.Clientset, giteaClien
 	}
 	fmt.Printf("Updated secret: %s/%s\n", updatedSecret.Namespace, updatedSecret.Name)
 	return nil
-}
-
-func (h *TokenRequestHandler) hash(name string, scopesStr string) string {
-	data := fmt.Sprintf("%s:%s", name, scopesStr)
-	hash := sha256.Sum256([]byte(data))
-	hexHash := fmt.Sprintf("%x", hash)
-	return hexHash[:63]
 }
 
 func parseScopes(permissions string) []gitea.AccessTokenScope {
