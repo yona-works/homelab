@@ -1,3 +1,4 @@
+# TODO: move ntfy module to system/external module
 module "ntfy" {
   source = "./modules/ntfy"
   auth   = var.ntfy

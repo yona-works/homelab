@@ -7,4 +7,5 @@ ingress-nginx:
       serviceMonitor:
         enabled: true
   tcp:
+    # What does this do?
     22: gitea/gitea-ssh:22
