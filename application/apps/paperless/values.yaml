@@ -10,6 +10,7 @@ app-template:
             PAPERLESS_PORT: 8000
             PAPERLESS_ADMIN_USER: admin
             PAPERLESS_URL: https://paperless.yona.works
+            PAPERLESS_APP_TITLE: Papierloos
           envFrom:
             - secret: "{{ .Release.Name }}-secret"
         redis:
