@@ -5,7 +5,7 @@
 KUBECONFIG = $(shell pwd)/metal/kubeconfig.yaml
 KUBE_CONFIG_PATH = $(KUBECONFIG)
 
-default: metal system platform smoke-test post-install clean
+default: metal system platform application smoke-test post-install clean
 
 configure:
 	./scripts/configure
@@ -14,14 +14,14 @@ configure:
 metal:
 	make -C metal
 
-platform:
-	make -C platform
-
 system:
 	make -C system
 
-external:
-	make -C external
+platform:
+	make -C platform
+
+application:
+	make -C application
 
 smoke-test:
 	make -C test filter=Smoke
