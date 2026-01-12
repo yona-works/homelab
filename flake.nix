@@ -1,8 +1,9 @@
 {
   description = "Homelab";
 
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
+ inputs = {
+    #nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-25.11-darwin";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -10,6 +11,9 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
+#        notestKanidm = pkgs.kanidm_1_8.overrideAttrs (_: {
+#            doCheck = false;
+#        });
       in
       with pkgs;
       {
@@ -26,11 +30,12 @@
             glibcLocales
             go
             gotestsum
-            iproute2
+#            iproute2
+            iproute2mac
             jq
             k9s
-            kanidm
-            kube3d
+#            notestKanidm
+            k3d
             kubectl
             kubernetes-helm
             kustomize
