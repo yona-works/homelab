@@ -11,7 +11,6 @@ app-template:
             PAPERLESS_ADMIN_USER: admin
             PAPERLESS_URL: https://paperless.yona.works
             PAPERLESS_APP_TITLE: Papierloos
-            PAPERLESS_OAUTH_CALLBACK_BASE_URL: https://paperless.yona.works/api/oauth/callback
           envFrom:
             - secret: "{{ .Release.Name }}-secret"
         redis:
