@@ -1,12 +1,9 @@
-variable "cloudflare_email" {
-  type = string
-}
+variable "cloudflare" {
+  type = object({
+    email      = string
+    api_key    = string
+    account_id = string
+  })
 
-variable "cloudflare_api_key" {
-  type      = string
   sensitive = true
-}
-
-variable "cloudflare_account_id" {
-  type = string
 }

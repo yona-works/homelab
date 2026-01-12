@@ -18,6 +18,6 @@ terraform {
 }
 
 provider "cloudflare" {
-  email   = var.cloudflare_email
-  api_key = var.cloudflare_api_key
+  email   = var.cloudflare.email
+  api_key = var.cloudflare.api_key
 }

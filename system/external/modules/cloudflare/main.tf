@@ -10,7 +10,7 @@ resource "random_password" "tunnel_secret" {
 }
 
 resource "cloudflare_tunnel" "homelab" {
-  account_id = var.cloudflare_account_id
+  account_id = var.cloudflare.account_id
   name       = "homelab"
   secret     = base64encode(random_password.tunnel_secret.result)
 }
@@ -37,7 +37,7 @@ resource "kubernetes_secret" "cloudflared_credentials" {
 
   data = {
     "credentials.json" = jsonencode({
-      AccountTag   = var.cloudflare_account_id
+      AccountTag   = var.cloudflare.account_id
       TunnelName   = cloudflare_tunnel.homelab.name
       TunnelID     = cloudflare_tunnel.homelab.id
       TunnelSecret = base64encode(random_password.tunnel_secret.result)
