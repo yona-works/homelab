@@ -6,7 +6,7 @@ metadata:
 spec:
   generators:
     - git:
-        repoURL: &repoURL https://github.com/jonaskoperdraat/homelab
+        repoURL: &repoURL https://github.com/yona-works/homelab
         revision: &revision master
         directories:
           - path: platform/apps/*
