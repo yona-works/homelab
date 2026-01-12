@@ -49,41 +49,6 @@ def apply_secret(name: str, namespace: str, data: dict) -> None:
         )
         client.CoreV1Api().create_namespaced_secret(namespace, new_secret)
 
-def setup_gitea_oauth_app(name: str, redirect_uri: str) -> None:
-    # TODO use the new global application, while it's there in the UI, there's no API yet.
-    current_apps = requests.get(
-        url=f"{gitea_url}/api/v1/user/applications/oauth2",
-        auth=(gitea_user,gitea_pass),
-    ).json()
-
-    if not any(app['name'] == name for app in current_apps):
-        resp = requests.post(
-            url=f"{gitea_url}/api/v1/user/applications/oauth2",
-            auth=(gitea_user,gitea_pass),
-            headers={
-                'Content-Type': 'application/json'
-            },
-            data=json.dumps({
-                'name': name,
-                'redirect_uris': [redirect_uri],
-                'confidential_client': True
-            })
-        )
-
-        if resp.status_code == 201:
-            apply_secret(
-                f"gitea.{name}",
-                "global-secrets",
-                {
-                    'client_id': base64.b64encode(resp.json()['client_id'].encode("utf-8")).decode("utf-8"),
-                    'client_secret': base64.b64encode(resp.json()['client_secret'].encode("utf-8")).decode("utf-8"),
-                }
-            )
-        else:
-            print(f"Error creating OAuth application {name} ({resp.status_code})")
-            print(resp.content)
-            sys.exit(1)
-
 def setup_gitea_auth_with_dex():
     gitea_pod = client.CoreV1Api().list_namespaced_pod(namespace='gitea', label_selector='app=gitea').items[0].metadata.name
     client_secret = base64.b64decode(
@@ -181,10 +146,6 @@ def setup_kanidm_oauth_app(name: str, redirect_uri: str) -> None:
 def main() -> None:
     with console.status("Completing the remaining sorcery"):
 
-        gitea_oauth_apps = [
-            {'name': 'woodpecker', 'redirect_uri': f"https://{client.NetworkingV1Api().read_namespaced_ingress('woodpecker-server', 'woodpecker').spec.rules[0].host}/authorize"},
-        ]
-
         kanidm_groups = [
             # TODO better group management
             {'name': 'editor'},
@@ -194,11 +155,6 @@ def main() -> None:
             {'name': 'dex', 'redirect_uri': f"https://{client.NetworkingV1Api().read_namespaced_ingress('dex', 'dex').spec.rules[0].host}/callback"},
         ]
 
-        # set up oauth apps in gitea (woodpecker)
-        for app in gitea_oauth_apps:
-            setup_gitea_oauth_app(app['name'], app['redirect_uri'])
-
-        # set up dex as an authentication source in gitea (why not woodpecker?)
         setup_gitea_auth_with_dex()
 
         kanidm_login(["admin", "idm_admin"])
