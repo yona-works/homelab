@@ -7,7 +7,7 @@ spec:
   generators:
     - git:
         repoURL: &repoURL https://github.com/yona-works/homelab
-        revision: &revision master
+        revision: &revision main
         directories:
           - path: application/apps/*
   template:
