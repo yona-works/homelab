@@ -3,7 +3,7 @@ terraform {
 
   cloud {
     hostname     = "app.terraform.io"
-    organization = "jnskt"
+    organization = "yona-works"
 
     workspaces {
       name = "homelab-platform-external"

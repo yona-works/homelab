@@ -1,10 +1,3 @@
-ntfy = {
-  # https://ntfy.sh or your own instance
-  url = "https://ntfy.sh"
-  # Your topic name
-  topic = "random_topic_name_here_a8sd7fkjxlkcjasdw33813"
-}
-
 extra_secrets = {
   # Try to keep this to a minimum with third-party secrets
   # Consider using the secret generator if possible
@@ -17,4 +10,6 @@ extra_secrets = {
   # restic-s3-bucket = "https://s3.amazonaws.com/my-homelab-backup-xxxxxxxxxx"
   # restic-s3-access-key = "xxxxxxxxxxxxxxxx"
   # restic-s3-secret-key = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  # paperless-gmail-oauth-client-id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com"
+  # paperless-gmail-oauth-client-secret = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 }
