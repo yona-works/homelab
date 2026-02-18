@@ -2,6 +2,10 @@
 
 ## Prerequisites
 
+Pick a backup target. The current setup assumes S3, but you can also use an
+NFS-backed Restic repository. The NFS option is a good fit for a local NAS and
+avoids running MinIO if you do not need an S3 API.
+
 Create an S3 bucket to store backups. You can use AWS S3, Minio, or
 any other S3-compatible provider.
 
@@ -37,6 +41,34 @@ following policy (replace `my-homelab-backup` with your actual bucket name):
 Save the access key and secret key to a secure location, such as a password
 manager. While you're at it, generate a new password for Restic encryption and
 save it there as well.
+
+### Alternative: NFS-backed Restic repository (NAS)
+
+If you want to target a NAS over NFS, define an NFS-backed volume in the
+system layer and mount it into the VolSync Restic data mover. Restic will use a
+filesystem repository path on that mounted volume.
+
+System layer expectations:
+
+- An NFS export on the NAS dedicated to backups.
+- A StorageClass and provisioner (preferred) or a static PersistentVolume that
+  maps to that export.
+- A PersistentVolumeClaim in each namespace that will run VolSync (PVCs are
+  namespaced).
+
+You will reference this PVC later via `moverVolumes` in the VolSync Restic
+configuration and set `RESTIC_REPOSITORY` to a local path like
+`/mnt/restic-repo/<namespace>/<pvc>`.
+
+If you want the NFS definition to live in the system layer, consider:
+
+- Defining an NFS StorageClass and provisioner as a system app.
+- Keeping namespace-specific PVCs with the VolSync config in platform or
+  application layers.
+
+This repo includes a system app for the NFS provisioner at
+`system/apps/nfs-provisioner`. Update `system/apps/nfs-provisioner/values.yaml`
+with your NAS server IP and export path, then apply system apps as usual.
 
 !!! example
 

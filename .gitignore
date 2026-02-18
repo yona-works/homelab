@@ -8,5 +8,6 @@ book/
 *kubeconfig.yaml
 Chart.lock
 *.iml
+*.pem
 
 .DS_Store

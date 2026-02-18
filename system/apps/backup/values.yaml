@@ -1,0 +1,12 @@
+nfs-subdir-external-provisioner:
+  nfs:
+    server: 192.168.88.50
+    path: /volume1/backup-home-lab
+    mountOptions:
+      - nfsvers=4.1
+  storageClass:
+    name: nas-nfs-backup
+    defaultClass: false
+    reclaimPolicy: Retain
+    archiveOnDelete: true
+    accessModes: ReadWriteMany
