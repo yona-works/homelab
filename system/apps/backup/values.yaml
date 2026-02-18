@@ -3,8 +3,9 @@ nfs-subdir-external-provisioner:
     server: 192.168.88.8
     path: /volume1/backup-home-lab
     mountOptions:
-      - nfsvers=4.1
+      - nfsvers=4
   storageClass:
+    provisionerName: backup-nfs-provisioner
     name: nas-nfs-backup
     defaultClass: false
     reclaimPolicy: Retain
