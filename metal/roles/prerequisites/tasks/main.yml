@@ -6,3 +6,9 @@
     - {name: "fs.inotify.max_queued_events", value: 16384}
     - {name: "fs.inotify.max_user_instances", value: 8192}
     - {name: "fs.inotify.max_user_watches", value: 524288}
+
+- name: Install NFS client utilities
+  ansible.builtin.package:
+    name: nfs-utils
+    state: present
+  when: ansible_os_family == "RedHat"
