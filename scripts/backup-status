@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+namespace=""
+pvc=""
+repo_type="filesystem"
+repo_pvc="backup-repo"
+image="restic/restic:0.18.0"
+timeout="5m"
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/backup-status --namespace <ns> --pvc <pvc> [options]
+
+Options:
+  --repo-type <filesystem|s3>   Repo type (default: filesystem)
+  --repo-pvc <name>             Repo PVC name for filesystem repos (default: backup-repo)
+  --image <image>               Restic image (default: restic/restic:0.18.0)
+  --timeout <duration>          Wait timeout (default: 5m)
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --namespace)
+      namespace="$2"
+      shift 2
+      ;;
+    --pvc)
+      pvc="$2"
+      shift 2
+      ;;
+    --repo-type)
+      repo_type="$2"
+      shift 2
+      ;;
+    --repo-pvc)
+      repo_pvc="$2"
+      shift 2
+      ;;
+    --image)
+      image="$2"
+      shift 2
+      ;;
+    --timeout)
+      timeout="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [ -z "${namespace}" ] || [ -z "${pvc}" ]; then
+  usage
+  exit 1
+fi
+
+secret="${pvc}-backup-repository"
+job="backup-status-${pvc}-$(date +%Y%m%d%H%M%S)"
+
+volume_yaml=""
+mount_yaml=""
+if [ "${repo_type}" = "filesystem" ]; then
+  mount_yaml=$(cat <<'EOF'
+          volumeMounts:
+            - name: repo
+              mountPath: /mnt/restic-repo
+EOF
+)
+  volume_yaml=$(cat <<EOF
+      volumes:
+        - name: repo
+          persistentVolumeClaim:
+            claimName: ${repo_pvc}
+EOF
+)
+fi
+
+cat <<EOF | kubectl -n "${namespace}" apply -f -
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${job}
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: restic
+          image: ${image}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: ${secret}
+${mount_yaml}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              restic snapshots
+${volume_yaml}
+EOF
+
+if ! kubectl -n "${namespace}" wait --for=condition=complete "job/${job}" --timeout="${timeout}"; then
+  echo "Job did not complete successfully." >&2
+  kubectl -n "${namespace}" logs "job/${job}" || true
+  kubectl -n "${namespace}" describe "job/${job}" || true
+  exit 1
+fi
+
+kubectl -n "${namespace}" logs "job/${job}"
+kubectl -n "${namespace}" delete "job/${job}" --ignore-not-found
