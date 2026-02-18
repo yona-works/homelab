@@ -217,7 +217,7 @@ apply_custom_resource(
 
 if repo_type == "filesystem":
     mover_volume = {
-        "mountPath": repo_mount_path,
+        "mountPath": repo_base_path,
         "volumeSource": {
             "persistentVolumeClaim": {
                 "claimName": repo_pvc,
