@@ -41,7 +41,7 @@ gitea:
     - name: gitea-dump
       persistentVolumeClaim:
         claimName: gitea-dump
-  extraContainerVolumeMounts:
+  extraVolumeMounts:
     - name: gitea-dump
       mountPath: /dump
 

@@ -93,4 +93,5 @@ spec:
                       --for=condition=Ready \
                       --timeout=2h
                   done
+                  echo "done."
 {{- end }}
