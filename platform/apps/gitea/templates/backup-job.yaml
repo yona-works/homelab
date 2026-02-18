@@ -89,9 +89,27 @@ spec:
 
                   echo "Waiting for VolSync to finish..."
                   for source in ${BACKUP_REPLICATION_SOURCES}; do
-                    kubectl -n "${NAMESPACE}" wait replicationsource "${source}" \
-                      --for=condition=Ready \
-                      --timeout=2h
+                    deadline="$(( $(date +%s) + 7200 ))"
+                    while true; do
+                      last_manual="$(kubectl -n "${NAMESPACE}" get replicationsource "${source}" -o jsonpath='{.status.lastManualSync}' 2>/dev/null || true)"
+                      result="$(kubectl -n "${NAMESPACE}" get replicationsource "${source}" -o jsonpath='{.status.latestMoverStatus.result}' 2>/dev/null || true)"
+
+                      if [ "${last_manual}" = "${trigger_id}" ] && [ -n "${result}" ]; then
+                        if [ "${result}" = "Successful" ]; then
+                          echo "ReplicationSource ${source} completed successfully."
+                          break
+                        fi
+                        echo "ReplicationSource ${source} failed (result=${result})."
+                        exit 1
+                      fi
+
+                      if [ "$(date +%s)" -ge "${deadline}" ]; then
+                        echo "Timed out waiting for ReplicationSource ${source}."
+                        exit 1
+                      fi
+
+                      sleep 10
+                    done
                   done
                   echo "done."
 {{- end }}
