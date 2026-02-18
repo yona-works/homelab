@@ -136,3 +136,48 @@ make restore
 The command above will restore the latest backup of recommended volumes. Like
 with backups, you can modify `./Makefile` to adjust the list of volumes you
 want to restore.
+
+## Gitea backups
+
+This repo ships a nightly backup CronJob in `platform/apps/gitea` that
+runs `gitea dump` into a dedicated `gitea-dump` PVC and then triggers VolSync
+for that PVC. The dump PVC is mounted into the Gitea pod at `/dump`. This avoids
+tying backups to Postgres replica counts and keeps the live Gitea data volume
+out of the backup path.
+The job removes any existing dump zips before creating a new timestamped dump,
+so the PVC stays small while VolSync retains history.
+For best results, set those ReplicationSources to manual-only triggers so the
+CronJob is the only backup runner.
+
+This relies on the relevant backup volumes having been created using the scripts/backup script:
+
+```shell
+./scripts/backup --action setup --namespace=gitea --pvc=gitea-dump --repo-type filesystem --schedule manual
+```
+
+Manual trigger:
+
+```sh
+kubectl -n gitea create job \
+  --from=cronjob/gitea-backup \
+  gitea-backup-manual-$(date +%Y%m%d%H%M%S)
+```
+
+Restore notes:
+
+- Restore the `gitea-dump` PVC.
+- Ensure Postgres is running and Gitea is ready.
+- Run `gitea restore` from the latest dump zip stored in `/dump/`.
+
+Example restore command:
+
+```sh
+kubectl -n gitea exec deploy/gitea -- \
+  gitea restore --file /dump/gitea-dump-YYYYMMDDHHMMSS.zip
+```
+
+Example (filesystem repo):
+
+```sh
+./scripts/backup --action restore --namespace=gitea --pvc=gitea-dump --repo-type filesystem
+```

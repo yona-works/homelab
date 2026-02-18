@@ -1,0 +1,96 @@
+{{- if .Values.backupJob.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitea-backup
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gitea-backup
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: ["volsync.backube"]
+    resources: ["replicationsources"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gitea-backup
+  namespace: {{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: gitea-backup
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: gitea-backup
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: gitea-backup
+  namespace: {{ .Release.Namespace }}
+spec:
+  schedule: "{{ .Values.backupJob.schedule }}"
+  timeZone: "{{ .Values.backupJob.timeZone }}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: gitea-backup
+          restartPolicy: Never
+          containers:
+            - name: backup
+              image: "{{ .Values.backupJob.image.repository }}:{{ .Values.backupJob.image.tag }}"
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: NAMESPACE
+                  value: "{{ .Release.Namespace }}"
+                - name: BACKUP_REPLICATION_SOURCES
+                  value: "{{ join " " .Values.backupJob.replicationSources }}"
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+
+                  echo "Running gitea dump..."
+                  kubectl -n "${NAMESPACE}" rollout status deployment/gitea --timeout=10m
+                  gitea_dump_ts="$(date -u +%Y%m%d%H%M%S)"
+                  kubectl -n "${NAMESPACE}" exec deploy/gitea -- /bin/sh -c "\
+                    mkdir -p /dump && \
+                    rm -f /dump/gitea-dump-*.zip && \
+                    gitea dump --file /dump/gitea-dump-${gitea_dump_ts}.zip \
+                  "
+
+                  echo "Triggering VolSync backups..."
+                  trigger_id="$(date -u +%Y%m%d%H%M%S)"
+                  for source in ${BACKUP_REPLICATION_SOURCES}; do
+                    kubectl -n "${NAMESPACE}" patch replicationsource "${source}" \
+                      --type merge \
+                      -p "{\"spec\":{\"trigger\":{\"manual\":\"${trigger_id}\"}}}"
+                  done
+
+                  echo "Waiting for VolSync to finish..."
+                  for source in ${BACKUP_REPLICATION_SOURCES}; do
+                    kubectl -n "${NAMESPACE}" wait replicationsource "${source}" \
+                      --for=condition=Ready \
+                      --timeout=2h
+                  done
+{{- end }}

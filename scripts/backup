@@ -10,11 +10,40 @@ arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument("--namespace", required=True)
 arg_parser.add_argument("--pvc", required=True)
 arg_parser.add_argument("--action", required=True)
+arg_parser.add_argument(
+    "--schedule",
+    default="*/30 * * * *",
+)
+arg_parser.add_argument(
+    "--repo-type",
+    choices=["s3", "filesystem"],
+    default="s3",
+)
+arg_parser.add_argument(
+    "--repo-pvc",
+    default="backup-repo",
+)
+arg_parser.add_argument(
+    "--repo-pvc-size",
+    default="100Gi",
+)
+arg_parser.add_argument(
+    "--repo-mount-path",
+    default="restic-repo",
+)
 args = arg_parser.parse_args()
 
 namespace = args.namespace
 pvc = args.pvc
 secret = f"{pvc}-backup-repository"
+repo_type = args.repo_type
+repo_pvc = args.repo_pvc
+repo_pvc_size = args.repo_pvc_size
+repo_mount_path = args.repo_mount_path.strip("/")
+schedule = args.schedule
+
+repo_base_path = f"/mnt/{repo_mount_path}"
+repo_path = f"{repo_base_path}/{namespace}/{pvc}"
 
 
 def apply_custom_resource(api, group, version, plural, name, namespace, body):
@@ -51,6 +80,109 @@ def apply_custom_resource(api, group, version, plural, name, namespace, body):
             raise e
 
 
+def apply_pvc(api, name, namespace, body):
+    try:
+        api.read_namespaced_persistent_volume_claim(
+            name=name,
+            namespace=namespace,
+        )
+
+        print(f"Patching PersistentVolumeClaim {name}")
+        api.patch_namespaced_persistent_volume_claim(
+            name=name,
+            namespace=namespace,
+            body=body,
+        )
+    except ApiException as e:
+        if e.status == 404:
+            print(f"Creating PersistentVolumeClaim {name}")
+            api.create_namespaced_persistent_volume_claim(
+                namespace=namespace,
+                body=body,
+            )
+        else:
+            raise e
+
+
+if repo_type == "filesystem":
+    repo_storage_class = "nas-nfs-backup"
+    apply_pvc(
+        api=client.CoreV1Api(),
+        name=repo_pvc,
+        namespace=namespace,
+        body={
+            "apiVersion": "v1",
+            "kind": "PersistentVolumeClaim",
+            "metadata": {
+                "name": repo_pvc,
+                "namespace": namespace,
+                "annotations": {
+                    "app.kubernetes.io/managed-by": "scripts/backup",
+                },
+            },
+            "spec": {
+                "accessModes": ["ReadWriteMany"],
+                "resources": {
+                    "requests": {
+                        "storage": repo_pvc_size,
+                    }
+                },
+                "storageClassName": repo_storage_class,
+            },
+        },
+    )
+
+
+secret_data = [
+    {
+        "remoteRef": {
+            "key": "external",
+            "property": "restic-password",
+        },
+        "secretKey": "restic_password",
+    },
+]
+secret_template_data = {
+    "RESTIC_PASSWORD": "{{ .restic_password }}",
+}
+
+if repo_type == "s3":
+    secret_data.extend(
+        [
+            {
+                "remoteRef": {
+                    "key": "external",
+                    "property": "restic-s3-bucket",
+                },
+                "secretKey": "restic_s3_bucket",
+            },
+            {
+                "remoteRef": {
+                    "key": "external",
+                    "property": "restic-s3-access-key",
+                },
+                "secretKey": "restic_s3_access_key",
+            },
+            {
+                "remoteRef": {
+                    "key": "external",
+                    "property": "restic-s3-secret-key",
+                },
+                "secretKey": "restic_s3_secret_key",
+            },
+        ]
+    )
+    secret_template_data.update(
+        {
+            "RESTIC_REPOSITORY": f"s3:{{{{ .restic_s3_bucket }}}}/{namespace}/{pvc}",
+            "AWS_ACCESS_KEY_ID": "{{ .restic_s3_access_key }}",
+            "AWS_SECRET_ACCESS_KEY": "{{ .restic_s3_secret_key }}",
+        }
+    )
+else:
+    secret_template_data["RESTIC_REPOSITORY"] = repo_path
+
+
 apply_custom_resource(
     api=client.CustomObjectsApi(),
     group="external-secrets.io",
@@ -73,51 +205,49 @@ apply_custom_resource(
                 "kind": "ClusterSecretStore",
                 "name": "global-secrets",
             },
-            "data": [
-                {
-                    "remoteRef": {
-                        "key": "external",
-                        "property": "restic-s3-bucket",
-                    },
-                    "secretKey": "restic_s3_bucket",
-                },
-                {
-                    "remoteRef": {
-                        "key": "external",
-                        "property": "restic-s3-access-key",
-                    },
-                    "secretKey": "restic_s3_access_key",
-                },
-                {
-                    "remoteRef": {
-                        "key": "external",
-                        "property": "restic-s3-secret-key",
-                    },
-                    "secretKey": "restic_s3_secret_key",
-                },
-                {
-                    "remoteRef": {
-                        "key": "external",
-                        "property": "restic-password",
-                    },
-                    "secretKey": "restic_password",
-                },
-            ],
+            "data": secret_data,
             "target": {
                 "template": {
-                    "data": {
-                        "RESTIC_REPOSITORY": f"s3:{{{{ .restic_s3_bucket }}}}/{namespace}/{pvc}",
-                        "RESTIC_PASSWORD": "{{ .restic_password }}",
-                        "AWS_ACCESS_KEY_ID": "{{ .restic_s3_access_key }}",
-                        "AWS_SECRET_ACCESS_KEY": "{{ .restic_s3_secret_key }}",
-                    }
+                    "data": secret_template_data
                 }
             },
         },
     },
 )
 
+if repo_type == "filesystem":
+    mover_volume = {
+        "mountPath": repo_mount_path,
+        "volumeSource": {
+            "persistentVolumeClaim": {
+                "claimName": repo_pvc,
+            }
+        },
+    }
+else:
+    mover_volume = None
+
 if args.action == "setup":
+    if schedule == "manual":
+        trigger = {"manual": "init"}
+    else:
+        trigger = {"schedule": schedule}
+
+    restic_spec = {
+        "pruneIntervalDays": 14,
+        "repository": secret,
+        "retain": {
+            "hourly": 6,
+            "daily": 5,
+            "weekly": 4,
+            "monthly": 2,
+            "yearly": 1,
+        },
+        "copyMethod": "Snapshot",
+    }
+    if mover_volume:
+        restic_spec["moverVolumes"] = [mover_volume]
+
     apply_custom_resource(
         api=client.CustomObjectsApi(),
         group="volsync.backube",
@@ -137,23 +267,20 @@ if args.action == "setup":
             },
             "spec": {
                 "sourcePVC": pvc,
-                "trigger": {"schedule": "*/30 * * * *"},
-                "restic": {
-                    "pruneIntervalDays": 14,
-                    "repository": secret,
-                    "retain": {
-                        "hourly": 6,
-                        "daily": 5,
-                        "weekly": 4,
-                        "monthly": 2,
-                        "yearly": 1,
-                    },
-                    "copyMethod": "Snapshot",
-                },
+                "trigger": trigger,
+                "restic": restic_spec,
             },
         },
     )
 elif args.action == "restore":
+    restic_spec = {
+        "repository": secret,
+        "destinationPVC": pvc,
+        "copyMethod": "Direct",
+    }
+    if mover_volume:
+        restic_spec["moverVolumes"] = [mover_volume]
+
     apply_custom_resource(
         api=client.CustomObjectsApi(),
         group="volsync.backube",
@@ -173,11 +300,7 @@ elif args.action == "restore":
             },
             "spec": {
                 "trigger": {"manual": "restore-once"},
-                "restic": {
-                    "repository": secret,
-                    "destinationPVC": pvc,
-                    "copyMethod": "Direct",
-                },
+                "restic": restic_spec,
             },
         },
     )
