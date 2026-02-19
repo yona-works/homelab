@@ -17,3 +17,10 @@
         state: present
         server_side_apply:
           field_manager: argocd-controller
+
+    - name: Apply prive ApplicationSet
+      kubernetes.core.k8s:
+        src: argocd/applicationsets/system-prive.yaml
+        state: present
+        server_side_apply:
+          field_manager: argocd-controller

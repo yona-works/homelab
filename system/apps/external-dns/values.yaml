@@ -1,6 +1,6 @@
 external-dns:
   provider: cloudflare
-  txtOwnerId: homelab
+  txtOwnerId: homelab-main
   env:
     - name: CF_API_TOKEN
       valueFrom:
@@ -9,6 +9,7 @@ external-dns:
           key: value
   extraArgs:
     - --annotation-filter=external-dns.alpha.kubernetes.io/exclude notin (true)
+    - --domain-filter=yona.works
   interval: 5m
   triggerLoopOnEvent: true
   metrics:
