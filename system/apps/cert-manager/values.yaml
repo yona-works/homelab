@@ -10,6 +10,8 @@ cert-manager-webhook-transip:
   certManager:
     namespace: cert-manager
     serviceAccountName: cert-manager
+  secretName:
+    - transip-credentials
 
 transip:
   accountName: jkoper
