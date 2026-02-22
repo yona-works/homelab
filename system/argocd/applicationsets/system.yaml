@@ -10,15 +10,16 @@ spec:
         revision: &revision main
         directories:
           - path: system/apps/*
+          - path: system/apps/*/*
   template:
     metadata:
-      name: '{{path.basename}}'
+      name: '{{ replace (path.basename) "." "-" }}'
       labels:
         layer: system
     spec:
       destination:
         name: in-cluster
-        namespace: '{{path.basename}}'
+        namespace: '{{ replace (path.basename) "." "-" }}'
       project: default  # TODO
       source:
         repoURL: *repoURL

@@ -1,0 +1,29 @@
+external-dns:
+  provider:
+    name: transip
+  txtOwnerId: homelab-prive
+  domainFilters:
+    - jonaskoperdraat.nl
+  env:
+    - name: TRANSIP_ACCOUNT
+      valueFrom:
+        secretKeyRef:
+          name: transip-private-key
+          key: account-name
+  extraArgs:
+    - --transip-account=$(TRANSIP_ACCOUNT)
+    - --transip-keyfile=/transip/private-key
+  extraVolumes:
+    - name: transip-key
+      secret:
+        secretName: transip-private-key
+        items:
+          - key: private-key
+            path: private-key
+  extraVolumeMounts:
+    - name: transip-key
+      mountPath: /transip
+  interval: 5m
+  triggerLoopOnEvent: true
+  serviceMonitor:
+    enabled: true

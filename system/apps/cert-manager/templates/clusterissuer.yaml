@@ -19,7 +19,18 @@ spec:
       - selector:
           dnsZones:
             - jonaskoperdraat.nl
-        http01:
-          ingress:
-            ingressClassName: nginx
+        dns01:
+          webhook:
+            groupName: acme.jonaskoperdraat.nl
+            solverName: transip
+            config:
+              accountName:
+                valueFrom:
+                  secretKeyRef:
+                    name: transip-private-key
+                    key: account-name
+              ttl: 300
+              privateKeySecretRef:
+                name: transip-private-key
+                key: private-key
 

@@ -43,13 +43,6 @@
         server_side_apply:
           field_manager: argocd-controller
 
-    - name: Apply prive/system ApplicationSet
-      kubernetes.core.k8s:
-        src: argocd/applicationsets/system-prive.yaml
-        state: present
-        server_side_apply:
-          field_manager: argocd-controller
-
     - name: Wait for cloudflared and external-dns to be ready
       kubernetes.core.k8s_info:
         kind: Deployment
