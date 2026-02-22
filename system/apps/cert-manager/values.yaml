@@ -8,6 +8,5 @@ cert-manager:
 cert-manager-webhook-transip:
   groupName: acme.jonaskoperdraat.nl
   certManager:
-    enabled: true
     namespace: cert-manager
     serviceAccountName: cert-manager
