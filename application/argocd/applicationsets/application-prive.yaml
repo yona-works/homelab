@@ -25,6 +25,8 @@ spec:
         repoURL: *repoURL
         path: '{{path}}'
         targetRevision: *revision
+        helm:
+          releaseName: '{{path.basename}}'
       syncPolicy:
         automated:
           prune: true
