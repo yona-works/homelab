@@ -27,10 +27,10 @@ spec:
               accountName:
                 valueFrom:
                   secretKeyRef:
-                    name: transip-private-key
+                    name: transip-credentials
                     key: account-name
               ttl: 300
               privateKeySecretRef:
-                name: transip-private-key
+                name: transip-credentials
                 key: private-key
 
