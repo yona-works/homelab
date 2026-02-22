@@ -24,11 +24,7 @@ spec:
             groupName: acme.jonaskoperdraat.nl
             solverName: transip
             config:
-              accountName:
-                valueFrom:
-                  secretKeyRef:
-                    name: transip-credentials
-                    key: account-name
+              accountName: {{ .Values.transip.accountName }}
               ttl: 300
               privateKeySecretRef:
                 name: transip-credentials
