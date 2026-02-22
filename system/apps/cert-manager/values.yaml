@@ -10,9 +10,3 @@ cert-manager-webhook-transip:
   certManager:
     namespace: cert-manager
     serviceAccountName: cert-manager
-  transip:
-    existingSecret:
-      enabled: true
-      name: transip-private-key
-      apiKeyKey: private-key
-      accountNameKey: account-name
