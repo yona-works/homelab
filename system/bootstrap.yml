@@ -52,7 +52,7 @@
         - name: cloudflared
           namespace: cloudflared
         - name: external-dns
-          namespace: external-dns
+          namespace: yona.works
       register: deploys
       until: deploys.resources[0].status.readyReplicas | default(0) >= 1
       retries: 30
