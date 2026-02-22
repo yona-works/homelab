@@ -73,7 +73,7 @@ app-template:
                 description: Request media
                 icon: jellyseerr.svg
             - Paperless:
-                href: https://paperless.yona.works
+                href: https://docs.jonaskoperdraat.nl
                 description: Document management system
                 icon: paperless.svg
           - Management:
