@@ -64,3 +64,13 @@
 #    - key: token
 #      length: 32
 #      special: false
+
+# docs.jonaskoperdraat.nl
+- name: docs.jonaskoperdraat.nl
+  data:
+    - key: ADMIN_PASSWORD
+      length: 32
+      special: true
+    - key: CONSUMER_SFTP_PASSWORD
+      length: 32
+      special: true
