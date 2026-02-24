@@ -11,3 +11,42 @@ nfs-subdir-external-provisioner:
     reclaimPolicy: Retain
     archiveOnDelete: true
     accessModes: ReadWriteMany
+
+backupController:
+  enabled: true
+  image: golang:1.25.5-alpine
+  imagePullPolicy: IfNotPresent
+  reconcileInterval: 5m
+  repo:
+    pvcName: backup-repo
+    pvcSize: 100Gi
+    storageClass: nas-nfs-backup
+    mountPath: restic-repo
+  restic:
+    pruneIntervalDays: 14
+    retain:
+      hourly: 6
+      daily: 5
+      weekly: 4
+      monthly: 2
+      yearly: 1
+  externalSecret:
+    storeName: global-secrets
+    storeKind: ClusterSecretStore
+    remoteKey: external
+    properties:
+      password: restic-password
+      s3Bucket: restic-s3-bucket
+      s3AccessKey: restic-s3-access-key
+      s3SecretKey: restic-s3-secret-key
+  runner:
+    image: bitnami/kubectl:1.30.1
+    imagePullPolicy: IfNotPresent
+  timeouts:
+    scaleDownSeconds: 600
+    exportSeconds: 3600
+    backupSeconds: 7200
+  offsite:
+    enabled: false
+    schedule: "0 3 * * 0"
+    timeZone: UTC

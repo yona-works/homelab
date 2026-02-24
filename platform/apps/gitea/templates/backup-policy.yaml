@@ -1,0 +1,17 @@
+apiVersion: backup.homelab/v1alpha1
+kind: BackupPolicy
+metadata:
+  name: gitea
+  namespace: {{ .Release.Namespace }}
+spec:
+  schedule: "0 4 * * *"
+  timeZone: "Europe/Amsterdam"
+  volumes:
+    - pvc: gitea-dump
+  quiesce:
+    scaleDown:
+      - kind: Deployment
+        name: gitea
+  export:
+    jobRef:
+      name: gitea-export

@@ -1,0 +1,94 @@
+{{- if .Values.backupController.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backup-controller
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backup-controller
+  template:
+    metadata:
+      labels:
+        app: backup-controller
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/backup-controller-source.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: backup-controller
+      containers:
+        - name: controller
+          image: {{ .Values.backupController.image | quote }}
+          imagePullPolicy: {{ .Values.backupController.imagePullPolicy }}
+          workingDir: /go/src/backup-controller
+          command: ["sh", "-c"]
+          args:
+            - |
+              go get .
+              go run .
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: RECONCILE_INTERVAL
+              value: {{ .Values.backupController.reconcileInterval | quote }}
+            - name: REPO_PVC_NAME
+              value: {{ .Values.backupController.repo.pvcName | quote }}
+            - name: REPO_PVC_SIZE
+              value: {{ .Values.backupController.repo.pvcSize | quote }}
+            - name: REPO_STORAGE_CLASS
+              value: {{ .Values.backupController.repo.storageClass | quote }}
+            - name: REPO_MOUNT_PATH
+              value: {{ .Values.backupController.repo.mountPath | quote }}
+            - name: PRUNE_INTERVAL_DAYS
+              value: {{ .Values.backupController.restic.pruneIntervalDays | quote }}
+            - name: RETAIN_HOURLY
+              value: {{ .Values.backupController.restic.retain.hourly | quote }}
+            - name: RETAIN_DAILY
+              value: {{ .Values.backupController.restic.retain.daily | quote }}
+            - name: RETAIN_WEEKLY
+              value: {{ .Values.backupController.restic.retain.weekly | quote }}
+            - name: RETAIN_MONTHLY
+              value: {{ .Values.backupController.restic.retain.monthly | quote }}
+            - name: RETAIN_YEARLY
+              value: {{ .Values.backupController.restic.retain.yearly | quote }}
+            - name: EXTERNAL_SECRET_STORE_NAME
+              value: {{ .Values.backupController.externalSecret.storeName | quote }}
+            - name: EXTERNAL_SECRET_STORE_KIND
+              value: {{ .Values.backupController.externalSecret.storeKind | quote }}
+            - name: EXTERNAL_SECRET_KEY
+              value: {{ .Values.backupController.externalSecret.remoteKey | quote }}
+            - name: RESTIC_PASSWORD_PROPERTY
+              value: {{ .Values.backupController.externalSecret.properties.password | quote }}
+            - name: RESTIC_S3_BUCKET_PROPERTY
+              value: {{ .Values.backupController.externalSecret.properties.s3Bucket | quote }}
+            - name: RESTIC_S3_ACCESS_KEY_PROPERTY
+              value: {{ .Values.backupController.externalSecret.properties.s3AccessKey | quote }}
+            - name: RESTIC_S3_SECRET_KEY_PROPERTY
+              value: {{ .Values.backupController.externalSecret.properties.s3SecretKey | quote }}
+            - name: RUNNER_IMAGE
+              value: {{ .Values.backupController.runner.image | quote }}
+            - name: RUNNER_IMAGE_PULL_POLICY
+              value: {{ .Values.backupController.runner.imagePullPolicy | quote }}
+            - name: SCALE_DOWN_TIMEOUT_SECONDS
+              value: {{ .Values.backupController.timeouts.scaleDownSeconds | quote }}
+            - name: EXPORT_TIMEOUT_SECONDS
+              value: {{ .Values.backupController.timeouts.exportSeconds | quote }}
+            - name: BACKUP_TIMEOUT_SECONDS
+              value: {{ .Values.backupController.timeouts.backupSeconds | quote }}
+            - name: OFFSITE_ENABLED
+              value: {{ .Values.backupController.offsite.enabled | quote }}
+            - name: OFFSITE_SCHEDULE
+              value: {{ .Values.backupController.offsite.schedule | quote }}
+            - name: OFFSITE_TIME_ZONE
+              value: {{ .Values.backupController.offsite.timeZone | quote }}
+          volumeMounts:
+            - name: source
+              mountPath: /go/src/backup-controller
+      volumes:
+        - name: source
+          configMap:
+            name: backup-controller-source
+{{- end }}

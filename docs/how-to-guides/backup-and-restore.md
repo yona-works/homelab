@@ -137,30 +137,88 @@ The command above will restore the latest backup of recommended volumes. Like
 with backups, you can modify `./Makefile` to adjust the list of volumes you
 want to restore.
 
-## Gitea backups
+## BackupPolicy (per-app backup hooks)
 
-This repo ships a nightly backup CronJob in `platform/apps/gitea` that
-runs `gitea dump` into a dedicated `gitea-dump` PVC and then triggers VolSync
-for that PVC. The dump PVC is mounted into the Gitea pod at `/dump`. This avoids
-tying backups to Postgres replica counts and keeps the live Gitea data volume
-out of the backup path.
-The job removes any existing dump zips before creating a new timestamped dump,
-so the PVC stays small while VolSync retains history.
-For best results, set those ReplicationSources to manual-only triggers so the
-CronJob is the only backup runner.
+The system backup app ships a controller that watches `BackupPolicy` resources.
+Each app can define its own backup schedule, optional quiesce targets, optional
+export job, and which PVCs to snapshot. The controller will:
 
-This relies on the relevant backup volumes having been created using the scripts/backup script:
+1. Scale down targets in `spec.quiesce.scaleDown` (if set).
+2. Run the export Job (if set).
+3. Trigger VolSync snapshots for all listed volumes.
+4. Wait for completion.
+5. Scale back up to the original replicas.
 
-```shell
-./scripts/backup --action setup --namespace=gitea --pvc=gitea-dump --repo-type filesystem --schedule manual
+The controller also creates/updates the required VolSync `ReplicationSource`
+objects and the Restic repository secrets for filesystem-backed repositories.
+Offsite S3 backups are controlled by the controller configuration in
+`system/apps/backup/values.yaml` and do not require any per-app changes.
+
+Example `BackupPolicy` (store in `apps/<app>/backup-policy.yaml`):
+
+```yaml
+apiVersion: backup.homelab/v1alpha1
+kind: BackupPolicy
+metadata:
+  name: gitea
+  namespace: gitea
+spec:
+  schedule: "0 2 * * *"
+  timeZone: "UTC"
+  volumes:
+    - pvc: gitea-dump
+  quiesce:
+    scaleDown:
+      - kind: Deployment
+        name: gitea
+  export:
+    jobRef:
+      name: gitea-dump
 ```
 
-Manual trigger:
+Notes:
+
+- `volumes` is the list of PVCs to snapshot with VolSync.
+- `quiesce.scaleDown` can include `Deployment` and `StatefulSet` targets.
+- `export.jobRef.name` must point to an existing `Job` or `CronJob` template in the same namespace.
+- If you only want crash-consistent backups, omit `quiesce` and `export`.
+
+### Ad-hoc backups
+
+The controller creates a CronJob per policy that runs the full backup flow.
+You can trigger it manually with:
+
+```sh
+kubectl -n <namespace> create job \
+  --from=cronjob/backup-<policy-name> \
+  backup-<policy-name>-manual-$(date +%Y%m%d%H%M%S)
+```
+
+If offsite backups are enabled, trigger the offsite CronJob instead:
+
+```sh
+kubectl -n <namespace> create job \
+  --from=cronjob/backup-<policy-name>-offsite \
+  backup-<policy-name>-offsite-manual-$(date +%Y%m%d%H%M%S)
+```
+
+## Gitea backups
+
+This repo ships a Gitea export Job template in `platform/apps/gitea` that is used as
+a template for the `BackupPolicy` export hook. The `BackupPolicy` handles
+quiescing, running the export job, triggering VolSync for the `gitea-dump` PVC,
+waiting for completion, and scaling back up.
+
+The export job runs `gitea dump` into a dedicated `gitea-dump` PVC mounted at
+`/dump`. This keeps live data volumes out of the backup path while VolSync
+retains history.
+
+Manual trigger (export job only):
 
 ```sh
 kubectl -n gitea create job \
-  --from=cronjob/gitea-backup \
-  gitea-backup-manual-$(date +%Y%m%d%H%M%S)
+  --from=job/gitea-export \
+  gitea-export-manual-$(date +%Y%m%d%H%M%S)
 ```
 
 Restore notes:

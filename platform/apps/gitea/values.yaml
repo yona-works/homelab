@@ -45,15 +45,12 @@ gitea:
     - name: gitea-dump
       mountPath: /dump
 
-backupJob:
+backupExportJob:
   enabled: true
-  schedule: "0 4 * * *"
-  timeZone: "Europe/Amsterdam"
   image:
     repository: bitnami/kubectl
     tag: latest
-  replicationSources:
-    - gitea-dump
-  dumpPvc:
-    name: gitea-dump
-    size: 5Gi
+
+dumpPvc:
+  name: gitea-dump
+  size: 5Gi

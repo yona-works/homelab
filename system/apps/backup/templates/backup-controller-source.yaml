@@ -1,0 +1,9 @@
+{{- if .Values.backupController.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-controller-source
+  namespace: {{ .Release.Namespace }}
+data:
+{{ (.Files.Glob "files/controller/**").AsConfig | indent 2 }}
+{{- end }}

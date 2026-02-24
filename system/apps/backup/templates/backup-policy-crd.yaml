@@ -1,0 +1,64 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: backuppolicies.backup.homelab
+spec:
+  group: backup.homelab
+  scope: Namespaced
+  names:
+    plural: backuppolicies
+    singular: backuppolicy
+    kind: BackupPolicy
+    shortNames:
+      - bpol
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - schedule
+                - volumes
+              properties:
+                schedule:
+                  type: string
+                timeZone:
+                  type: string
+                volumes:
+                  type: array
+                  items:
+                    type: object
+                    required: [pvc]
+                    properties:
+                      pvc:
+                        type: string
+                quiesce:
+                  type: object
+                  properties:
+                    scaleDown:
+                      type: array
+                      items:
+                        type: object
+                        required: [kind, name]
+                        properties:
+                          kind:
+                            type: string
+                            enum: [Deployment, StatefulSet]
+                          name:
+                            type: string
+                export:
+                  type: object
+                  properties:
+                    jobRef:
+                      type: object
+                      required: [name]
+                      properties:
+                        name:
+                          type: string
+      subresources:
+        status: {}
