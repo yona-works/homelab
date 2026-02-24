@@ -295,7 +295,7 @@ func ensureRunnerRBAC(client *kubeClient, ns string) error {
 		"rules": []map[string]interface{}{
 			{
 				"apiGroups": []string{"apps"},
-				"resources": []string{"deployments", "statefulsets"},
+				"resources": []string{"deployments", "statefulsets", "deployments/scale", "statefulsets/scale"},
 				"verbs":     []string{"get", "list", "watch", "patch", "update"},
 			},
 			{
