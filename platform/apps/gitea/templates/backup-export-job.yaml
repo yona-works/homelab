@@ -41,7 +41,7 @@ metadata:
   name: gitea-export
   namespace: {{ .Release.Namespace }}
   annotations:
-    argocd.argoproj.io/health-check: "true"
+    argocd.argoproj.io/ignore-healthcheck: "true"
 spec:
   suspend: true
   template:
