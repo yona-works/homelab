@@ -25,6 +25,7 @@
         apply: true
         server_side_apply:
           field_manager: argocd-controller
+          force_conflicts: true
 
     - name: Wait for ArgoCD to be ready
       kubernetes.core.k8s_info:
