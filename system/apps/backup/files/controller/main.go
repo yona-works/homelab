@@ -581,12 +581,7 @@ fi
 
 if [ -n "${EXPORT_JOB_NAME:-}" ]; then
   job_name="${EXPORT_JOB_NAME}-run-$(date -u +%Y%m%d%H%M%S)"
-  if kubectl -n "${NAMESPACE}" get cronjob "${EXPORT_JOB_NAME}" >/dev/null 2>&1; then
-    kubectl -n "${NAMESPACE}" create job "${job_name}" --from="cronjob/${EXPORT_JOB_NAME}"
-  else
-    kubectl -n "${NAMESPACE}" create job "${job_name}" --from="job/${EXPORT_JOB_NAME}"
-    kubectl -n "${NAMESPACE}" patch job "${job_name}" --type merge -p "{\"spec\":{\"suspend\":false}}" >/dev/null 2>&1 || true
-  fi
+  kubectl -n "${NAMESPACE}" create job "${job_name}" --from="cronjob/${EXPORT_JOB_NAME}"
   if ! kubectl -n "${NAMESPACE}" wait --for=condition=complete "job/${job_name}" --timeout="${EXPORT_TIMEOUT_SECONDS}s"; then
     kubectl -n "${NAMESPACE}" logs "job/${job_name}" || true
     exit 1

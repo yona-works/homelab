@@ -204,7 +204,7 @@ kubectl -n <namespace> create job \
 
 ## Gitea backups
 
-This repo ships a Gitea export Job template in `platform/apps/gitea` that is used as
+This repo ships a Gitea export CronJob template (suspended) in `platform/apps/gitea` that is used as
 a template for the `BackupPolicy` export hook. The `BackupPolicy` handles
 quiescing, running the export job, triggering VolSync for the `gitea-dump` PVC,
 waiting for completion, and scaling back up.
@@ -217,7 +217,7 @@ Manual trigger (export job only):
 
 ```sh
 kubectl -n gitea create job \
-  --from=job/gitea-export \
+  --from=cronjob/gitea-export \
   gitea-export-manual-$(date +%Y%m%d%H%M%S)
 ```
 
