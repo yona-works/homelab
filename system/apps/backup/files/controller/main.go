@@ -300,7 +300,7 @@ func ensureRunnerRBAC(client *kubeClient, ns string) error {
 			},
 			{
 				"apiGroups": []string{"batch"},
-				"resources": []string{"jobs"},
+				"resources": []string{"jobs", "cronjobs"},
 				"verbs":     []string{"get", "list", "watch", "create", "patch", "update"},
 			},
 			{
@@ -562,6 +562,12 @@ cleanup() {
   fi
 }
 
+on_error() {
+  echo "Backup failed, restoring scaled workloads..." >&2
+  cleanup
+}
+
+trap on_error ERR
 trap cleanup EXIT
 
 if [ -n "${SCALE_DOWN_TARGETS:-}" ]; then
