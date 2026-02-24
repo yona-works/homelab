@@ -235,8 +235,27 @@ func ensureRepoPVC(client *kubeClient, cfg Config, ns string) error {
 		},
 	}
 
-	return client.upsert(namespacedPath("/api/v1", ns, "persistentvolumeclaims", cfg.RepoPVCName),
-		namespacedPath("/api/v1", ns, "persistentvolumeclaims"), pvc, nil)
+	itemPath := namespacedPath("/api/v1", ns, "persistentvolumeclaims", cfg.RepoPVCName)
+	collectionPath := namespacedPath("/api/v1", ns, "persistentvolumeclaims")
+	body, status, err := client.doRequest("GET", itemPath, nil)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusOK {
+		_ = body
+		return nil
+	}
+	if status != http.StatusNotFound {
+		return fmt.Errorf("get failed: %s status=%d", itemPath, status)
+	}
+	_, createStatus, err := client.doRequest("POST", collectionPath, pvc)
+	if err != nil {
+		return err
+	}
+	if createStatus < 200 || createStatus >= 300 {
+		return fmt.Errorf("create failed: %s status=%d", collectionPath, createStatus)
+	}
+	return nil
 }
 
 func ensureRunnerRBAC(client *kubeClient, ns string) error {
