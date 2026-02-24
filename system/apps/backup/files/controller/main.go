@@ -131,6 +131,8 @@ func loadConfig() Config {
 }
 
 func reconcile(client *kubeClient, cfg Config) {
+	start := time.Now()
+	fmt.Println("reconcile: starting")
 	listPath := fmt.Sprintf("/apis/%s/%s/backuppolicies", backupPolicyGroup, backupPolicyVersion)
 	body, status, err := client.doRequest("GET", listPath, nil)
 	if err != nil {
@@ -147,12 +149,14 @@ func reconcile(client *kubeClient, cfg Config) {
 		fmt.Printf("failed to parse BackupPolicies: %v\n", err)
 		return
 	}
+	fmt.Printf("reconcile: found %d BackupPolicies\n", len(list.Items))
 
 	for _, policy := range list.Items {
 		if err := reconcilePolicy(client, cfg, policy); err != nil {
 			fmt.Printf("reconcile failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
 		}
 	}
+	fmt.Printf("reconcile: completed in %s\n", time.Since(start).Truncate(time.Millisecond))
 }
 
 func reconcilePolicy(client *kubeClient, cfg Config, policy BackupPolicy) error {
