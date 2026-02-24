@@ -1,40 +1,4 @@
 {{- if .Values.backupExportJob.enabled }}
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: gitea-backup
-  namespace: {{ .Release.Namespace }}
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: gitea-backup
-  namespace: {{ .Release.Namespace }}
-rules:
-  - apiGroups: ["apps"]
-    resources: ["deployments"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["pods/exec"]
-    verbs: ["create"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: gitea-backup
-  namespace: {{ .Release.Namespace }}
-subjects:
-  - kind: ServiceAccount
-    name: gitea-backup
-    namespace: {{ .Release.Namespace }}
-roleRef:
-  kind: Role
-  name: gitea-backup
-  apiGroup: rbac.authorization.k8s.io
----
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -49,15 +13,40 @@ spec:
     spec:
       template:
         spec:
-          serviceAccountName: gitea-backup
           restartPolicy: Never
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: gitea-shared-storage
+            - name: dump
+              persistentVolumeClaim:
+                claimName: {{ .Values.dumpPvc.name }}
+            - name: tmp
+              emptyDir: {}
           containers:
             - name: export
               image: "{{ .Values.backupExportJob.image.repository }}:{{ .Values.backupExportJob.image.tag }}"
               imagePullPolicy: IfNotPresent
               env:
-                - name: NAMESPACE
-                  value: "{{ .Release.Namespace }}"
+                - name: GITEA_APP_INI
+                  value: /data/gitea/conf/app.ini
+                - name: GITEA_CUSTOM
+                  value: /data/gitea
+                - name: GITEA_WORK_DIR
+                  value: /data
+                - name: GITEA_TEMP
+                  value: /tmp/gitea
+                - name: TMPDIR
+                  value: /tmp/gitea
+                - name: HOME
+                  value: /data/gitea/git
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                - name: dump
+                  mountPath: /dump
+                - name: tmp
+                  mountPath: /tmp
               command:
                 - /bin/sh
                 - -c
@@ -65,11 +54,8 @@ spec:
                   set -euo pipefail
 
                   echo "Running gitea dump..."
-                  kubectl -n "${NAMESPACE}" rollout status deployment/gitea --timeout=10m
                   gitea_dump_ts="$(date -u +%Y%m%d%H%M%S)"
-                  kubectl -n "${NAMESPACE}" exec deploy/gitea -- /bin/sh -c "\
-                    mkdir -p /dump && \
-                    rm -f /dump/gitea-dump-*.zip && \
-                    gitea dump --file /dump/gitea-dump-${gitea_dump_ts}.zip \
-                  "
+                  mkdir -p /dump
+                  rm -f /dump/gitea-dump-*.zip
+                  gitea dump -c /data/gitea/conf/app.ini --file /dump/gitea-dump-${gitea_dump_ts}.zip
 {{- end }}

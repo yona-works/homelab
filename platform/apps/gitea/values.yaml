@@ -48,8 +48,8 @@ gitea:
 backupExportJob:
   enabled: true
   image:
-    repository: bitnami/kubectl
-    tag: latest
+    repository: docker.gitea.com/gitea
+    tag: 1.24.6-rootless
 
 dumpPvc:
   name: gitea-dump
