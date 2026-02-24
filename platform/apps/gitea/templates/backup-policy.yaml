@@ -1,7 +1,7 @@
 apiVersion: backup.homelab/v1alpha1
 kind: BackupPolicy
 metadata:
-  name: gitea
+  name: gitea-backup-policy
   namespace: {{ .Release.Namespace }}
 spec:
   schedule: "0 4 * * *"
