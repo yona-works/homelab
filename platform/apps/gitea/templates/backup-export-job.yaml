@@ -40,6 +40,8 @@ kind: Job
 metadata:
   name: gitea-export
   namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/health-check: ignore
 spec:
   suspend: true
   template:
