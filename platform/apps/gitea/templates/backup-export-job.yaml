@@ -55,6 +55,7 @@ spec:
 
                   echo "Running gitea dump..."
                   gitea_dump_ts="$(date -u +%Y%m%d%H%M%S)"
+                  mkdir -p /tmp/gitea
                   mkdir -p /dump
                   rm -f /dump/gitea-dump-*.zip
                   gitea dump -c /data/gitea/conf/app.ini --file /dump/gitea-dump-${gitea_dump_ts}.zip
