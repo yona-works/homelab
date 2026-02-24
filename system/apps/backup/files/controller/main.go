@@ -121,7 +121,7 @@ func loadConfig() Config {
 		ResticS3BucketProperty:  getenv("RESTIC_S3_BUCKET_PROPERTY", "restic-s3-bucket"),
 		ResticS3AccessKeyProp:   getenv("RESTIC_S3_ACCESS_KEY_PROPERTY", "restic-s3-access-key"),
 		ResticS3SecretKeyProp:   getenv("RESTIC_S3_SECRET_KEY_PROPERTY", "restic-s3-secret-key"),
-		RunnerImage:             getenv("RUNNER_IMAGE", "bitnami/kubectl:1.30.1"),
+		RunnerImage:             getenv("RUNNER_IMAGE", "bitnami/kubectl:latest"),
 		RunnerImagePullPolicy:   getenv("RUNNER_IMAGE_PULL_POLICY", "IfNotPresent"),
 		ScaleDownTimeoutSeconds: mustInt64(getenv("SCALE_DOWN_TIMEOUT_SECONDS", "600")),
 		ExportTimeoutSeconds:    mustInt64(getenv("EXPORT_TIMEOUT_SECONDS", "3600")),
