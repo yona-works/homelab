@@ -22,9 +22,11 @@ type BackupPolicy struct {
 	APIVersion string `json:"apiVersion"`
 	Kind       string `json:"kind"`
 	Metadata   struct {
-		Name      string `json:"name"`
-		Namespace string `json:"namespace"`
-		UID       string `json:"uid"`
+		Name            string `json:"name"`
+		Namespace       string `json:"namespace"`
+		UID             string `json:"uid"`
+		ResourceVersion string `json:"resourceVersion"`
+		Generation      int64  `json:"generation"`
 	} `json:"metadata"`
 	Spec BackupPolicySpec `json:"spec"`
 }
@@ -154,6 +156,13 @@ func reconcile(client *kubeClient, cfg Config) {
 	for _, policy := range list.Items {
 		if err := reconcilePolicy(client, cfg, policy); err != nil {
 			fmt.Printf("reconcile failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
+			if err := updatePolicyStatus(client, policy, "False", "ReconcileError", err.Error()); err != nil {
+				fmt.Printf("status update failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
+			}
+		} else {
+			if err := updatePolicyStatus(client, policy, "True", "Reconciled", "Reconcile successful"); err != nil {
+				fmt.Printf("status update failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
+			}
 		}
 	}
 	fmt.Printf("reconcile: completed in %s\n", time.Since(start).Truncate(time.Millisecond))
@@ -805,4 +814,47 @@ func mustInt64(value string) int64 {
 		panic(err)
 	}
 	return parsed
+}
+
+func updatePolicyStatus(client *kubeClient, policy BackupPolicy, status, reason, message string) error {
+	if policy.Metadata.Name == "" || policy.Metadata.Namespace == "" {
+		return fmt.Errorf("missing policy name/namespace for status update")
+	}
+	statusPath := namespacedPath(
+		fmt.Sprintf("/apis/%s/%s", backupPolicyGroup, backupPolicyVersion),
+		policy.Metadata.Namespace,
+		"backuppolicies",
+		policy.Metadata.Name,
+	) + "/status"
+
+	condition := map[string]interface{}{
+		"type":               "Ready",
+		"status":             status,
+		"reason":             reason,
+		"message":            message,
+		"lastTransitionTime": time.Now().UTC().Format(time.RFC3339),
+	}
+
+	payload := map[string]interface{}{
+		"apiVersion": policy.APIVersion,
+		"kind":       policy.Kind,
+		"metadata": map[string]interface{}{
+			"name":            policy.Metadata.Name,
+			"namespace":       policy.Metadata.Namespace,
+			"resourceVersion": policy.Metadata.ResourceVersion,
+		},
+		"status": map[string]interface{}{
+			"observedGeneration": policy.Metadata.Generation,
+			"conditions":         []map[string]interface{}{condition},
+		},
+	}
+
+	_, updateStatus, err := client.doRequest("PUT", statusPath, payload)
+	if err != nil {
+		return err
+	}
+	if updateStatus < 200 || updateStatus >= 300 {
+		return fmt.Errorf("status update failed: %s status=%d", statusPath, updateStatus)
+	}
+	return nil
 }
