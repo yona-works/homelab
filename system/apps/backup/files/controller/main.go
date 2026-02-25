@@ -60,6 +60,9 @@ type Config struct {
 	RepoPVCSize             string
 	RepoStorageClass        string
 	RepoMountPath           string
+	NFSEnabled              bool
+	NFSServer               string
+	NFSPath                 string
 	PruneIntervalDays       int64
 	RetainHourly            int64
 	RetainDaily             int64
@@ -108,6 +111,9 @@ func loadConfig() Config {
 		RepoPVCSize:             getenv("REPO_PVC_SIZE", "100Gi"),
 		RepoStorageClass:        getenv("REPO_STORAGE_CLASS", "nas-nfs-backup"),
 		RepoMountPath:           strings.Trim(getenv("REPO_MOUNT_PATH", "restic-repo"), "/"),
+		NFSEnabled:              getenv("NFS_ENABLED", "false") == "true",
+		NFSServer:               getenv("NFS_SERVER", ""),
+		NFSPath:                 getenv("NFS_PATH", ""),
 		PruneIntervalDays:       mustInt64(getenv("PRUNE_INTERVAL_DAYS", "14")),
 		RetainHourly:            mustInt64(getenv("RETAIN_HOURLY", "6")),
 		RetainDaily:             mustInt64(getenv("RETAIN_DAILY", "5")),
@@ -178,8 +184,10 @@ func reconcilePolicy(client *kubeClient, cfg Config, policy BackupPolicy) error 
 		policy.Kind = "BackupPolicy"
 	}
 
-	if err := ensureRepoPVC(client, cfg, ns); err != nil {
-		return err
+	if !cfg.NFSEnabled {
+		if err := ensureRepoPVC(client, cfg, ns); err != nil {
+			return err
+		}
 	}
 
 	if err := ensureRunnerRBAC(client, ns); err != nil {
@@ -419,16 +427,30 @@ func ensureReplicationSource(client *kubeClient, cfg Config, ns, name, secretNam
 	}
 
 	if useMover {
-		resticSpec["moverVolumes"] = []map[string]interface{}{
-			{
-				"mountPath": cfg.RepoMountPath,
-				"volumeSource": map[string]interface{}{
-					"persistentVolumeClaim": map[string]interface{}{
-						"claimName": cfg.RepoPVCName,
-						"readOnly":  false,
+		if cfg.NFSEnabled {
+			resticSpec["moverVolumes"] = []map[string]interface{}{
+				{
+					"mountPath": cfg.RepoMountPath,
+					"volumeSource": map[string]interface{}{
+						"nfs": map[string]interface{}{
+							"server": cfg.NFSServer,
+							"path":   cfg.NFSPath,
+						},
 					},
 				},
-			},
+			}
+		} else {
+			resticSpec["moverVolumes"] = []map[string]interface{}{
+				{
+					"mountPath": cfg.RepoMountPath,
+					"volumeSource": map[string]interface{}{
+						"persistentVolumeClaim": map[string]interface{}{
+							"claimName": cfg.RepoPVCName,
+							"readOnly":  false,
+						},
+					},
+				},
+			}
 		}
 	}
 
