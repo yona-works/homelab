@@ -10,6 +10,8 @@ spec:
         revision: &revision main
         directories:
           - path: application/apps/*
+          - path: application/apps/*/restore
+            exclude: true
   template:
     metadata:
       name: '{{path.basename}}'

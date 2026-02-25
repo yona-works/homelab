@@ -202,6 +202,47 @@ kubectl -n <namespace> create job \
   backup-<policy-name>-offsite-manual-$(date +%Y%m%d%H%M%S)
 ```
 
+## Restore verification (GitOps restore instances)
+
+Restore/verify instances are deployed via dedicated ApplicationSets that read a
+targets list. This keeps restore resources out of prod charts and makes restore
+instances opt-in.
+
+Conventions:
+
+- A restore instance uses the same chart as prod and provides a
+  `values-restore.yaml` overlay.
+- Each app’s restore resources live in `application/apps/<app>/restore`.
+- Restore ApplicationSets always render `values.yaml` + `values-restore.yaml`
+  for the chart source.
+- The restore ApplicationSets derive the restore manifest path as
+  `{{chartPath}}/restore`, so targets only need `chartPath`.
+
+Targets file locations:
+
+- Main repo: `application/restore/targets.yaml`
+- Private repo: `application/restore/targets.yaml`
+
+Targets file format:
+
+```yaml
+- name: paperless
+  namespace: prive-paperless-restore
+  chartPath: application/apps/paperless
+```
+
+Enable/disable a restore instance by adding/removing an entry in the targets
+file, then sync the `restore` / `restore-prive` ApplicationSet.
+
+To trigger a restore, edit the restore `ReplicationDestination` and bump the
+manual trigger:
+
+```yaml
+spec:
+  trigger:
+    manual: restore-YYYYMMDD-HHMMSS
+```
+
 ## Gitea backups
 
 This repo ships a Gitea export CronJob template (suspended) in `platform/apps/gitea` that is used as

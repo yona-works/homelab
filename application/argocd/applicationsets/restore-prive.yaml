@@ -1,32 +1,37 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: application-prive
+  name: restore-prive
   namespace: argocd
 spec:
   generators:
     - git:
         repoURL: &repoURL ssh://git@git.yona.works:22/prive/argocd-apps
         revision: &revision main
-        directories:
-          - path: application/apps/*
-          - path: application/apps/*/restore
-            exclude: true
+        files:
+          - path: application/restore/targets.yaml
   template:
     metadata:
-      name: 'prive-{{path.basename}}'
+      name: 'restore-prive-{{name}}'
       labels:
-        layer: application
+        layer: restore
         tenant: prive
     spec:
       destination:
         name: in-cluster
-        namespace: 'prive-{{path.basename}}'
+        namespace: '{{namespace}}'
       project: default  # TODO
-      source:
-        repoURL: *repoURL
-        path: '{{path}}'
-        targetRevision: *revision
+      sources:
+        - repoURL: *repoURL
+          path: '{{chartPath}}'
+          targetRevision: *revision
+          helm:
+            valueFiles:
+              - values.yaml
+              - values-restore.yaml
+        - repoURL: *repoURL
+          path: '{{chartPath}}/restore'
+          targetRevision: *revision
       syncPolicy:
         automated:
           prune: true
@@ -43,7 +48,4 @@ spec:
           - ServerSideApply=true
         managedNamespaceMetadata:
           annotations:
-            # Enable privileged VolSync movers by default for all namespaces
-            # TODO this may be refactored in the future for finer granularity
-            # See also https://volsync.readthedocs.io/en/stable/usage/permissionmodel.html
             volsync.backube/privileged-movers: "true"

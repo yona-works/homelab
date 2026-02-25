@@ -24,3 +24,17 @@
         state: present
         server_side_apply:
           field_manager: argocd-controller
+
+    - name: Apply restore ApplicationSet
+      kubernetes.core.k8s:
+        src: argocd/applicationsets/restore.yaml
+        state: present
+        server_side_apply:
+          field_manager: argocd-controller
+
+    - name: Apply restore prive ApplicationSet
+      kubernetes.core.k8s:
+        src: argocd/applicationsets/restore-prive.yaml
+        state: present
+        server_side_apply:
+          field_manager: argocd-controller

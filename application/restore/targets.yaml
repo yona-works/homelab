@@ -1,0 +1,6 @@
+# Restore/verify app instances to enable in the main repo.
+# Example:
+# - name: jellyfin
+#   namespace: jellyfin-restore
+#   chartPath: application/apps/jellyfin
+[]
