@@ -107,9 +107,6 @@ type Config struct {
 	RepoPVCSize             string
 	RepoStorageClass        string
 	RepoMountPath           string
-	NFSEnabled              bool
-	NFSServer               string
-	NFSPath                 string
 	PruneIntervalDays       int64
 	RetainHourly            int64
 	RetainDaily             int64
@@ -163,9 +160,6 @@ func loadConfig() Config {
 		RepoPVCSize:             getenv("REPO_PVC_SIZE", "100Gi"),
 		RepoStorageClass:        getenv("REPO_STORAGE_CLASS", "nas-nfs-backup"),
 		RepoMountPath:           strings.Trim(getenv("REPO_MOUNT_PATH", "restic-repo"), "/"),
-		NFSEnabled:              getenv("NFS_ENABLED", "false") == "true",
-		NFSServer:               getenv("NFS_SERVER", ""),
-		NFSPath:                 getenv("NFS_PATH", ""),
 		PruneIntervalDays:       mustInt64(getenv("PRUNE_INTERVAL_DAYS", "14")),
 		RetainHourly:            mustInt64(getenv("RETAIN_HOURLY", "6")),
 		RetainDaily:             mustInt64(getenv("RETAIN_DAILY", "5")),
@@ -291,10 +285,8 @@ func reconcilePolicy(client *kubeClient, cfg Config, policy BackupPolicy) ([]Bac
 
 	fmt.Printf("reconcile policy %s/%s: %d volumes\n", ns, name, len(policy.Spec.Volumes))
 
-	if !cfg.NFSEnabled {
-		if err := ensureRepoPVC(client, cfg, ns); err != nil {
-			return nil, policy.Status.LastSnapshotSync, err
-		}
+	if err := ensureRepoPVC(client, cfg, ns); err != nil {
+		return nil, policy.Status.LastSnapshotSync, err
 	}
 
 	if err := ensureRunnerRBAC(client, ns); err != nil {
@@ -614,30 +606,16 @@ func ensureReplicationSource(client *kubeClient, cfg Config, ns, name, secretNam
 
 	if useMover {
 		mountPath := fmt.Sprintf("/mnt/%s", cfg.RepoMountPath)
-		if cfg.NFSEnabled {
-			resticSpec["moverVolumes"] = []map[string]interface{}{
-				{
-					"mountPath": mountPath,
-					"volumeSource": map[string]interface{}{
-						"nfs": map[string]interface{}{
-							"server": cfg.NFSServer,
-							"path":   cfg.NFSPath,
-						},
+		resticSpec["moverVolumes"] = []map[string]interface{}{
+			{
+				"mountPath": mountPath,
+				"volumeSource": map[string]interface{}{
+					"persistentVolumeClaim": map[string]interface{}{
+						"claimName": cfg.RepoPVCName,
+						"readOnly":  false,
 					},
 				},
-			}
-		} else {
-			resticSpec["moverVolumes"] = []map[string]interface{}{
-				{
-					"mountPath": mountPath,
-					"volumeSource": map[string]interface{}{
-						"persistentVolumeClaim": map[string]interface{}{
-							"claimName": cfg.RepoPVCName,
-							"readOnly":  false,
-						},
-					},
-				},
-			}
+			},
 		}
 	}
 
@@ -686,30 +664,16 @@ func ensureReplicationDestination(client *kubeClient, cfg Config, ns, name, secr
 		resticSpec["restoreAsOf"] = restoreAsOf
 	}
 	mountPath := fmt.Sprintf("/mnt/%s", cfg.RepoMountPath)
-	if cfg.NFSEnabled {
-		resticSpec["moverVolumes"] = []map[string]interface{}{
-			{
-				"mountPath": mountPath,
-				"volumeSource": map[string]interface{}{
-					"nfs": map[string]interface{}{
-						"server": cfg.NFSServer,
-						"path":   cfg.NFSPath,
-					},
+	resticSpec["moverVolumes"] = []map[string]interface{}{
+		{
+			"mountPath": mountPath,
+			"volumeSource": map[string]interface{}{
+				"persistentVolumeClaim": map[string]interface{}{
+					"claimName": cfg.RepoPVCName,
+					"readOnly":  false,
 				},
 			},
-		}
-	} else {
-		resticSpec["moverVolumes"] = []map[string]interface{}{
-			{
-				"mountPath": mountPath,
-				"volumeSource": map[string]interface{}{
-					"persistentVolumeClaim": map[string]interface{}{
-						"claimName": cfg.RepoPVCName,
-						"readOnly":  false,
-					},
-				},
-			},
-		}
+		},
 	}
 
 	obj := map[string]interface{}{
@@ -1167,17 +1131,9 @@ func ensureSnapshotJob(client *kubeClient, cfg Config, ns, jobName, secretName s
 			"name": "repo",
 		},
 	}
-
-	if cfg.NFSEnabled {
-		volumes[0]["nfs"] = map[string]interface{}{
-			"server": cfg.NFSServer,
-			"path":   cfg.NFSPath,
-		}
-	} else {
-		volumes[0]["persistentVolumeClaim"] = map[string]interface{}{
-			"claimName": cfg.RepoPVCName,
-			"readOnly":  false,
-		}
+	volumes[0]["persistentVolumeClaim"] = map[string]interface{}{
+		"claimName": cfg.RepoPVCName,
+		"readOnly":  false,
 	}
 
 	job := map[string]interface{}{

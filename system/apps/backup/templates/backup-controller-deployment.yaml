@@ -42,14 +42,6 @@ spec:
               value: {{ .Values.backupController.repo.storageClass | quote }}
             - name: REPO_MOUNT_PATH
               value: {{ .Values.backupController.repo.mountPath | quote }}
-            - name: NFS_ENABLED
-              value: {{ .Values.backupController.repo.nfs.enabled | quote }}
-            - name: NFS_SERVER
-              value: {{ .Values.backupController.repo.nfs.server | quote }}
-            - name: NFS_PATH
-              value: {{ .Values.backupController.repo.nfs.path | quote }}
-            - name: NFS_MOUNT_OPTIONS
-              value: {{ join "," .Values.backupController.repo.nfs.mountOptions | quote }}
             - name: PRUNE_INTERVAL_DAYS
               value: {{ .Values.backupController.restic.pruneIntervalDays | quote }}
             - name: RETAIN_HOURLY

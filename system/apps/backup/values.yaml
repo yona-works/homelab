@@ -1,3 +1,13 @@
+nfs-subdir-external-provisioner:
+  nfs:
+    server: 192.168.88.8
+    path: /volume1/backup-home-lab
+  storageClass:
+    name: nas-nfs-backup
+    defaultClass: false
+    reclaimPolicy: Retain
+    accessModes: ReadWriteMany
+
 backupController:
   enabled: true
   image: golang:1.25.5-alpine
@@ -8,12 +18,6 @@ backupController:
     pvcSize: 100Gi
     storageClass: nas-nfs-backup
     mountPath: restic-repo
-    nfs:
-      enabled: true
-      server: 192.168.88.8
-      path: /volume1/backup-home-lab
-      mountOptions:
-        - nfsvers=3
   restic:
     image: restic/restic:0.18.0
     pruneIntervalDays: 14
