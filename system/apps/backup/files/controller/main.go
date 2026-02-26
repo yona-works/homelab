@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -28,11 +29,29 @@ type BackupPolicy struct {
 		ResourceVersion string `json:"resourceVersion"`
 		Generation      int64  `json:"generation"`
 	} `json:"metadata"`
-	Spec BackupPolicySpec `json:"spec"`
+	Spec   BackupPolicySpec   `json:"spec"`
+	Status BackupPolicyStatus `json:"status,omitempty"`
 }
 
 type BackupPolicyList struct {
 	Items []BackupPolicy `json:"items"`
+}
+
+type RestorePolicy struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Metadata   struct {
+		Name            string `json:"name"`
+		Namespace       string `json:"namespace"`
+		UID             string `json:"uid"`
+		ResourceVersion string `json:"resourceVersion"`
+		Generation      int64  `json:"generation"`
+	} `json:"metadata"`
+	Spec RestorePolicySpec `json:"spec"`
+}
+
+type RestorePolicyList struct {
+	Items []RestorePolicy `json:"items"`
 }
 
 type BackupPolicySpec struct {
@@ -52,6 +71,33 @@ type BackupPolicySpec struct {
 			Name string `json:"name"`
 		} `json:"jobRef"`
 	} `json:"export,omitempty"`
+}
+
+type BackupPolicyStatus struct {
+	LastSnapshotSync string                     `json:"lastSnapshotSync,omitempty"`
+	Volumes          []BackupPolicyVolumeStatus `json:"volumes,omitempty"`
+}
+
+type BackupPolicyVolumeStatus struct {
+	PVC       string           `json:"pvc"`
+	LastSync  string           `json:"lastSync,omitempty"`
+	Snapshots []BackupSnapshot `json:"snapshots,omitempty"`
+}
+
+type BackupSnapshot struct {
+	ID      string `json:"id"`
+	Time    string `json:"time"`
+	Size    uint64 `json:"size"`
+	Snippet string `json:"snippet"`
+}
+
+type RestorePolicySpec struct {
+	SourceNamespace string `json:"sourceNamespace"`
+	Volumes         []struct {
+		SourcePVC   string `json:"sourcePVC"`
+		TargetPVC   string `json:"targetPVC"`
+		RestoreAsOf string `json:"restoreAsOf,omitempty"`
+	} `json:"volumes"`
 }
 
 type Config struct {
@@ -78,6 +124,7 @@ type Config struct {
 	ResticS3SecretKeyProp   string
 	RunnerImage             string
 	RunnerImagePullPolicy   string
+	ResticImage             string
 	ScaleDownTimeoutSeconds int64
 	ExportTimeoutSeconds    int64
 	BackupTimeoutSeconds    int64
@@ -129,6 +176,7 @@ func loadConfig() Config {
 		ResticS3SecretKeyProp:   getenv("RESTIC_S3_SECRET_KEY_PROPERTY", "restic-s3-secret-key"),
 		RunnerImage:             getenv("RUNNER_IMAGE", "bitnami/kubectl:latest"),
 		RunnerImagePullPolicy:   getenv("RUNNER_IMAGE_PULL_POLICY", "IfNotPresent"),
+		ResticImage:             getenv("RESTIC_IMAGE", "restic/restic:0.18.0"),
 		ScaleDownTimeoutSeconds: mustInt64(getenv("SCALE_DOWN_TIMEOUT_SECONDS", "600")),
 		ExportTimeoutSeconds:    mustInt64(getenv("EXPORT_TIMEOUT_SECONDS", "3600")),
 		BackupTimeoutSeconds:    mustInt64(getenv("BACKUP_TIMEOUT_SECONDS", "7200")),
@@ -160,21 +208,53 @@ func reconcile(client *kubeClient, cfg Config) {
 	fmt.Printf("reconcile: found %d BackupPolicies\n", len(list.Items))
 
 	for _, policy := range list.Items {
-		if err := reconcilePolicy(client, cfg, policy); err != nil {
+		volStatus, lastSnapshotSync, err := reconcilePolicy(client, cfg, policy)
+		if err != nil {
 			fmt.Printf("reconcile failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
-			if err := updatePolicyStatus(client, policy, "False", "ReconcileError", err.Error()); err != nil {
+			if err := updateBackupPolicyStatus(client, policy, "False", "ReconcileError", err.Error(), volStatus, lastSnapshotSync); err != nil {
 				fmt.Printf("status update failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
 			}
 		} else {
-			if err := updatePolicyStatus(client, policy, "True", "Reconciled", "Reconcile successful"); err != nil {
+			if err := updateBackupPolicyStatus(client, policy, "True", "Reconciled", "Reconcile successful", volStatus, lastSnapshotSync); err != nil {
 				fmt.Printf("status update failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
+			}
+		}
+	}
+
+	restoreListPath := fmt.Sprintf("/apis/%s/%s/restorepolicies", backupPolicyGroup, backupPolicyVersion)
+	restoreBody, restoreStatus, restoreErr := client.doRequest("GET", restoreListPath, nil)
+	if restoreErr != nil {
+		fmt.Printf("failed to list RestorePolicies: %v\n", restoreErr)
+		return
+	}
+	if restoreStatus != http.StatusOK {
+		fmt.Printf("failed to list RestorePolicies: status=%d\n", restoreStatus)
+		return
+	}
+
+	var restoreList RestorePolicyList
+	if err := json.Unmarshal(restoreBody, &restoreList); err != nil {
+		fmt.Printf("failed to parse RestorePolicies: %v\n", err)
+		return
+	}
+	fmt.Printf("reconcile: found %d RestorePolicies\n", len(restoreList.Items))
+
+	for _, policy := range restoreList.Items {
+		if err := reconcileRestorePolicy(client, cfg, policy); err != nil {
+			fmt.Printf("restore reconcile failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
+			if err := updateRestoreStatus(client, policy, "False", "ReconcileError", err.Error()); err != nil {
+				fmt.Printf("restore status update failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
+			}
+		} else {
+			if err := updateRestoreStatus(client, policy, "True", "Reconciled", "Reconcile successful"); err != nil {
+				fmt.Printf("restore status update failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
 			}
 		}
 	}
 	fmt.Printf("reconcile: completed in %s\n", time.Since(start).Truncate(time.Millisecond))
 }
 
-func reconcilePolicy(client *kubeClient, cfg Config, policy BackupPolicy) error {
+func reconcilePolicy(client *kubeClient, cfg Config, policy BackupPolicy) ([]BackupPolicyVolumeStatus, string, error) {
 	ns := policy.Metadata.Namespace
 	name := policy.Metadata.Name
 	if policy.APIVersion == "" {
@@ -186,16 +266,24 @@ func reconcilePolicy(client *kubeClient, cfg Config, policy BackupPolicy) error 
 
 	if !cfg.NFSEnabled {
 		if err := ensureRepoPVC(client, cfg, ns); err != nil {
-			return err
+			return nil, policy.Status.LastSnapshotSync, err
 		}
 	}
 
 	if err := ensureRunnerRBAC(client, ns); err != nil {
-		return err
+		return nil, policy.Status.LastSnapshotSync, err
+	}
+
+	existingStatus := map[string]BackupPolicyVolumeStatus{}
+	for _, vol := range policy.Status.Volumes {
+		existingStatus[vol.PVC] = vol
 	}
 
 	primarySources := make([]string, 0, len(policy.Spec.Volumes))
 	offsiteSources := make([]string, 0, len(policy.Spec.Volumes))
+	volumeStatuses := make([]BackupPolicyVolumeStatus, 0, len(policy.Spec.Volumes))
+	lastSnapshotSync := policy.Status.LastSnapshotSync
+	snapshotsUpdated := false
 
 	for _, vol := range policy.Spec.Volumes {
 		if vol.PVC == "" {
@@ -205,31 +293,99 @@ func reconcilePolicy(client *kubeClient, cfg Config, policy BackupPolicy) error 
 		secretName := sanitizeName(fmt.Sprintf("backup-repo-%s-%s", name, vol.PVC))
 
 		if err := ensureExternalSecret(client, cfg, ns, secretName, vol.PVC, false, policy); err != nil {
-			return err
+			return volumeStatuses, lastSnapshotSync, err
 		}
 		if err := ensureReplicationSource(client, cfg, ns, baseName, secretName, vol.PVC, policy, true); err != nil {
-			return err
+			return volumeStatuses, lastSnapshotSync, err
 		}
 		primarySources = append(primarySources, baseName)
+
+		statusEntry := BackupPolicyVolumeStatus{PVC: vol.PVC}
+		existingEntry, hasExisting := existingStatus[vol.PVC]
+		if hasExisting {
+			statusEntry.Snapshots = existingEntry.Snapshots
+			statusEntry.LastSync = existingEntry.LastSync
+		}
+
+		result, endTime, err := getReplicationSourceStatus(client, ns, baseName)
+		if err != nil {
+			return volumeStatuses, lastSnapshotSync, err
+		}
+		if endTime != "" {
+			statusEntry.LastSync = endTime
+		}
+
+		if result == "Successful" && endTime != "" {
+			if !hasExisting || existingEntry.LastSync != endTime || len(existingEntry.Snapshots) == 0 {
+				snapshots, err := fetchSnapshots(client, cfg, ns, policy.Metadata.Name, vol.PVC, secretName)
+				if err != nil {
+					return volumeStatuses, lastSnapshotSync, err
+				}
+				statusEntry.Snapshots = snapshots
+				snapshotsUpdated = true
+			}
+		}
+
+		volumeStatuses = append(volumeStatuses, statusEntry)
 
 		if cfg.OffsiteEnabled {
 			offsiteName := sanitizeName(fmt.Sprintf("backup-offsite-%s-%s", name, vol.PVC))
 			offsiteSecret := sanitizeName(fmt.Sprintf("backup-repo-offsite-%s-%s", name, vol.PVC))
 			if err := ensureExternalSecret(client, cfg, ns, offsiteSecret, vol.PVC, true, policy); err != nil {
-				return err
+				return volumeStatuses, lastSnapshotSync, err
 			}
 			if err := ensureReplicationSource(client, cfg, ns, offsiteName, offsiteSecret, vol.PVC, policy, false); err != nil {
-				return err
+				return volumeStatuses, lastSnapshotSync, err
 			}
 			offsiteSources = append(offsiteSources, offsiteName)
 		}
 	}
 
 	if err := ensureCronJob(client, cfg, ns, policy, primarySources, false); err != nil {
-		return err
+		return volumeStatuses, lastSnapshotSync, err
 	}
 	if cfg.OffsiteEnabled {
 		if err := ensureCronJob(client, cfg, ns, policy, offsiteSources, true); err != nil {
+			return volumeStatuses, lastSnapshotSync, err
+		}
+	}
+
+	if snapshotsUpdated {
+		lastSnapshotSync = time.Now().UTC().Format(time.RFC3339)
+	}
+
+	return volumeStatuses, lastSnapshotSync, nil
+}
+
+func reconcileRestorePolicy(client *kubeClient, cfg Config, policy RestorePolicy) error {
+	ns := policy.Metadata.Namespace
+	name := policy.Metadata.Name
+	if policy.APIVersion == "" {
+		policy.APIVersion = fmt.Sprintf("%s/%s", backupPolicyGroup, backupPolicyVersion)
+	}
+	if policy.Kind == "" {
+		policy.Kind = "RestorePolicy"
+	}
+
+	if policy.Spec.SourceNamespace == "" {
+		return fmt.Errorf("spec.sourceNamespace is required")
+	}
+
+	for _, vol := range policy.Spec.Volumes {
+		if vol.SourcePVC == "" || vol.TargetPVC == "" {
+			continue
+		}
+		secretName := sanitizeName(fmt.Sprintf("restore-repo-%s-%s", name, vol.SourcePVC))
+		if err := ensureRestoreExternalSecret(client, cfg, ns, secretName, policy.Spec.SourceNamespace, vol.SourcePVC, policy); err != nil {
+			return err
+		}
+
+		if err := ensureTargetPVC(client, cfg, ns, policy.Spec.SourceNamespace, vol.SourcePVC, vol.TargetPVC); err != nil {
+			return err
+		}
+
+		restoreName := sanitizeName(fmt.Sprintf("restore-%s-%s", name, vol.TargetPVC))
+		if err := ensureReplicationDestination(client, cfg, ns, restoreName, secretName, vol.TargetPVC, vol.RestoreAsOf, policy); err != nil {
 			return err
 		}
 	}
@@ -258,12 +414,11 @@ func ensureRepoPVC(client *kubeClient, cfg Config, ns string) error {
 
 	itemPath := namespacedPath("/api/v1", ns, "persistentvolumeclaims", cfg.RepoPVCName)
 	collectionPath := namespacedPath("/api/v1", ns, "persistentvolumeclaims")
-	body, status, err := client.doRequest("GET", itemPath, nil)
+	_, status, err := client.doRequest("GET", itemPath, nil)
 	if err != nil {
 		return err
 	}
 	if status == http.StatusOK {
-		_ = body
 		return nil
 	}
 	if status != http.StatusNotFound {
@@ -478,6 +633,170 @@ func ensureReplicationSource(client *kubeClient, cfg Config, ns, name, secretNam
 		namespacedPath("/apis/volsync.backube/v1alpha1", ns, "replicationsources"), obj, &policy)
 }
 
+func ensureReplicationDestination(client *kubeClient, cfg Config, ns, name, secretName, pvc, restoreAsOf string, policy RestorePolicy) error {
+	resticSpec := map[string]interface{}{
+		"repository":     secretName,
+		"copyMethod":     "Direct",
+		"destinationPVC": pvc,
+	}
+	if restoreAsOf != "" {
+		resticSpec["restoreAsOf"] = restoreAsOf
+	}
+	if cfg.NFSEnabled {
+		resticSpec["moverVolumes"] = []map[string]interface{}{
+			{
+				"mountPath": cfg.RepoMountPath,
+				"volumeSource": map[string]interface{}{
+					"nfs": map[string]interface{}{
+						"server": cfg.NFSServer,
+						"path":   cfg.NFSPath,
+					},
+				},
+			},
+		}
+	} else {
+		resticSpec["moverVolumes"] = []map[string]interface{}{
+			{
+				"mountPath": cfg.RepoMountPath,
+				"volumeSource": map[string]interface{}{
+					"persistentVolumeClaim": map[string]interface{}{
+						"claimName": cfg.RepoPVCName,
+						"readOnly":  false,
+					},
+				},
+			},
+		}
+	}
+
+	obj := map[string]interface{}{
+		"apiVersion": "volsync.backube/v1alpha1",
+		"kind":       "ReplicationDestination",
+		"metadata": map[string]interface{}{
+			"name":      name,
+			"namespace": ns,
+			"labels": map[string]interface{}{
+				"restore-policy/name":      policy.Metadata.Name,
+				"restore-policy/namespace": ns,
+			},
+		},
+		"spec": map[string]interface{}{
+			"trigger": map[string]interface{}{
+				"manual": "init",
+			},
+			"restic": resticSpec,
+		},
+	}
+
+	return client.upsert(namespacedPath("/apis/volsync.backube/v1alpha1", ns, "replicationdestinations", name),
+		namespacedPath("/apis/volsync.backube/v1alpha1", ns, "replicationdestinations"), obj, nil)
+}
+
+func ensureRestoreExternalSecret(client *kubeClient, cfg Config, ns, secretName, sourceNamespace, sourcePVC string, policy RestorePolicy) error {
+	secretData := []map[string]interface{}{
+		{
+			"remoteRef": map[string]interface{}{"key": cfg.ExternalSecretKey, "property": cfg.ResticPasswordProperty},
+			"secretKey": "restic_password",
+		},
+	}
+
+	templateData := map[string]interface{}{
+		"RESTIC_PASSWORD":   "{{ .restic_password }}",
+		"RESTIC_REPOSITORY": fmt.Sprintf("/mnt/%s/%s/%s", cfg.RepoMountPath, sourceNamespace, sourcePVC),
+	}
+
+	obj := map[string]interface{}{
+		"apiVersion": "external-secrets.io/v1beta1",
+		"kind":       "ExternalSecret",
+		"metadata": map[string]interface{}{
+			"name":      secretName,
+			"namespace": ns,
+			"labels": map[string]interface{}{
+				"restore-policy/name":      policy.Metadata.Name,
+				"restore-policy/namespace": ns,
+			},
+		},
+		"spec": map[string]interface{}{
+			"secretStoreRef": map[string]interface{}{
+				"kind": cfg.ExternalSecretStoreKind,
+				"name": cfg.ExternalSecretStoreName,
+			},
+			"data": secretData,
+			"target": map[string]interface{}{
+				"template": map[string]interface{}{
+					"data": templateData,
+				},
+			},
+		},
+	}
+
+	return client.upsert(namespacedPath("/apis/external-secrets.io/v1beta1", ns, "externalsecrets", secretName),
+		namespacedPath("/apis/external-secrets.io/v1beta1", ns, "externalsecrets"), obj, nil)
+}
+
+func ensureTargetPVC(client *kubeClient, cfg Config, targetNamespace, sourceNamespace, sourcePVC, targetPVC string) error {
+	itemPath := namespacedPath("/api/v1", targetNamespace, "persistentvolumeclaims", targetPVC)
+	_, status, err := client.doRequest("GET", itemPath, nil)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusOK {
+		return nil
+	}
+	if status != http.StatusNotFound {
+		return fmt.Errorf("get failed: %s status=%d", itemPath, status)
+	}
+
+	srcPath := namespacedPath("/api/v1", sourceNamespace, "persistentvolumeclaims", sourcePVC)
+	srcBody, srcStatus, err := client.doRequest("GET", srcPath, nil)
+	if err != nil {
+		return err
+	}
+	if srcStatus != http.StatusOK {
+		return fmt.Errorf("get failed: %s status=%d", srcPath, srcStatus)
+	}
+
+	var src map[string]interface{}
+	if err := json.Unmarshal(srcBody, &src); err != nil {
+		return err
+	}
+	srcSpec, _ := src["spec"].(map[string]interface{})
+	srcResources, _ := srcSpec["resources"].(map[string]interface{})
+	srcRequests, _ := srcResources["requests"].(map[string]interface{})
+	srcStorage := srcRequests["storage"]
+
+	srcAccessModes, _ := srcSpec["accessModes"].([]interface{})
+	srcStorageClass, _ := srcSpec["storageClassName"].(string)
+
+	pvc := map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "PersistentVolumeClaim",
+		"metadata": map[string]interface{}{
+			"name":      targetPVC,
+			"namespace": targetNamespace,
+		},
+		"spec": map[string]interface{}{
+			"accessModes": srcAccessModes,
+			"resources": map[string]interface{}{
+				"requests": map[string]interface{}{
+					"storage": srcStorage,
+				},
+			},
+		},
+	}
+	if srcStorageClass != "" {
+		pvc["spec"].(map[string]interface{})["storageClassName"] = srcStorageClass
+	}
+
+	_, createStatus, err := client.doRequest("POST", namespacedPath("/api/v1", targetNamespace, "persistentvolumeclaims"), pvc)
+	if err != nil {
+		return err
+	}
+	if createStatus < 200 || createStatus >= 300 {
+		return fmt.Errorf("create failed: %s status=%d", targetNamespace, createStatus)
+	}
+	return nil
+}
+
 func ensureCronJob(client *kubeClient, cfg Config, ns string, policy BackupPolicy, sources []string, offsite bool) error {
 	if len(sources) == 0 {
 		return nil
@@ -650,6 +969,235 @@ for source in ${REPLICATION_SOURCES}; do
 func backupScriptHash() string {
 	sum := sha256.Sum256([]byte(backupScript()))
 	return hex.EncodeToString(sum[:])
+}
+
+func getReplicationSourceStatus(client *kubeClient, ns, name string) (string, string, error) {
+	itemPath := namespacedPath("/apis/volsync.backube/v1alpha1", ns, "replicationsources", name)
+	body, status, err := client.doRequest("GET", itemPath, nil)
+	if err != nil {
+		return "", "", err
+	}
+	if status != http.StatusOK {
+		return "", "", fmt.Errorf("get failed: %s status=%d", itemPath, status)
+	}
+
+	var obj map[string]interface{}
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return "", "", err
+	}
+	statusMap, _ := obj["status"].(map[string]interface{})
+	if statusMap == nil {
+		return "", "", nil
+	}
+	latestMover, _ := statusMap["latestMoverStatus"].(map[string]interface{})
+	result, _ := latestMover["result"].(string)
+	endTime, _ := latestMover["endTime"].(string)
+	if endTime == "" {
+		startTime, _ := latestMover["startTime"].(string)
+		if startTime == "" {
+			startTime, _ = latestMover["startTimestamp"].(string)
+		}
+		if startTime != "" {
+			endTime = startTime
+		}
+	}
+	if endTime == "" {
+		manual, _ := statusMap["lastManualSync"].(string)
+		endTime = manual
+	}
+	return result, endTime, nil
+}
+
+func fetchSnapshots(client *kubeClient, cfg Config, ns, policyName, pvc, secretName string) ([]BackupSnapshot, error) {
+	jobName := sanitizeName(fmt.Sprintf("backup-snapshots-%s-%s-%d", policyName, pvc, time.Now().UTC().Unix()))
+	if err := ensureSnapshotJob(client, cfg, ns, jobName, secretName); err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = deleteJob(client, ns, jobName)
+	}()
+
+	if err := waitForJobCompletion(client, ns, jobName, 5*time.Minute); err != nil {
+		return nil, err
+	}
+
+	logs, err := getJobLogs(client, ns, jobName)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw []map[string]interface{}
+	if err := json.Unmarshal([]byte(logs), &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse restic snapshots output: %w", err)
+	}
+
+	snapshots := make([]BackupSnapshot, 0, len(raw))
+	for _, item := range raw {
+		id, _ := item["id"].(string)
+		timeVal, _ := item["time"].(string)
+		var size uint64
+		if sizeVal, ok := item["size"].(float64); ok {
+			if sizeVal > 0 {
+				size = uint64(sizeVal)
+			}
+		}
+		if id == "" || timeVal == "" {
+			continue
+		}
+		snapshots = append(snapshots, BackupSnapshot{
+			ID:      id,
+			Time:    timeVal,
+			Size:    size,
+			Snippet: fmt.Sprintf("restoreAsOf: \"%s\"  # %s", timeVal, id),
+		})
+	}
+	return snapshots, nil
+}
+
+func ensureSnapshotJob(client *kubeClient, cfg Config, ns, jobName, secretName string) error {
+	mountPath := fmt.Sprintf("/mnt/%s", cfg.RepoMountPath)
+	container := map[string]interface{}{
+		"name":            "restic",
+		"image":           cfg.ResticImage,
+		"imagePullPolicy": "IfNotPresent",
+		"envFrom": []map[string]interface{}{
+			{
+				"secretRef": map[string]interface{}{
+					"name": secretName,
+				},
+			},
+		},
+		"command": []string{"/bin/sh", "-c"},
+		"args":    []string{"restic snapshots --json"},
+		"volumeMounts": []map[string]interface{}{
+			{
+				"name":      "repo",
+				"mountPath": mountPath,
+			},
+		},
+	}
+
+	volumes := []map[string]interface{}{
+		{
+			"name": "repo",
+		},
+	}
+
+	if cfg.NFSEnabled {
+		volumes[0]["nfs"] = map[string]interface{}{
+			"server": cfg.NFSServer,
+			"path":   cfg.NFSPath,
+		}
+	} else {
+		volumes[0]["persistentVolumeClaim"] = map[string]interface{}{
+			"claimName": cfg.RepoPVCName,
+			"readOnly":  false,
+		}
+	}
+
+	job := map[string]interface{}{
+		"apiVersion": "batch/v1",
+		"kind":       "Job",
+		"metadata": map[string]interface{}{
+			"name":      jobName,
+			"namespace": ns,
+		},
+		"spec": map[string]interface{}{
+			"backoffLimit": 0,
+			"template": map[string]interface{}{
+				"spec": map[string]interface{}{
+					"serviceAccountName": "backup-runner",
+					"restartPolicy":      "Never",
+					"containers":         []map[string]interface{}{container},
+					"volumes":            volumes,
+				},
+			},
+		},
+	}
+
+	return client.upsert(namespacedPath("/apis/batch/v1", ns, "jobs", jobName),
+		namespacedPath("/apis/batch/v1", ns, "jobs"), job, nil)
+}
+
+func waitForJobCompletion(client *kubeClient, ns, jobName string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		itemPath := namespacedPath("/apis/batch/v1", ns, "jobs", jobName)
+		body, status, err := client.doRequest("GET", itemPath, nil)
+		if err != nil {
+			return err
+		}
+		if status != http.StatusOK {
+			return fmt.Errorf("get failed: %s status=%d", itemPath, status)
+		}
+		var job map[string]interface{}
+		if err := json.Unmarshal(body, &job); err != nil {
+			return err
+		}
+		statusObj, _ := job["status"].(map[string]interface{})
+		if statusObj != nil {
+			if succeeded, ok := statusObj["succeeded"].(float64); ok && succeeded > 0 {
+				return nil
+			}
+			if failed, ok := statusObj["failed"].(float64); ok && failed > 0 {
+				return fmt.Errorf("job %s failed", jobName)
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for job %s", jobName)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+func getJobLogs(client *kubeClient, ns, jobName string) (string, error) {
+	selector := url.QueryEscape(fmt.Sprintf("job-name=%s", jobName))
+	listPath := fmt.Sprintf("/api/v1/namespaces/%s/pods?labelSelector=%s", ns, selector)
+	body, status, err := client.doRequest("GET", listPath, nil)
+	if err != nil {
+		return "", err
+	}
+	if status != http.StatusOK {
+		return "", fmt.Errorf("get failed: %s status=%d", listPath, status)
+	}
+	var podList map[string]interface{}
+	if err := json.Unmarshal(body, &podList); err != nil {
+		return "", err
+	}
+	items, _ := podList["items"].([]interface{})
+	if len(items) == 0 {
+		return "", fmt.Errorf("no pods found for job %s", jobName)
+	}
+	pod, _ := items[0].(map[string]interface{})
+	meta, _ := pod["metadata"].(map[string]interface{})
+	podName, _ := meta["name"].(string)
+	if podName == "" {
+		return "", fmt.Errorf("pod name not found for job %s", jobName)
+	}
+	logPath := fmt.Sprintf("/api/v1/namespaces/%s/pods/%s/log", ns, podName)
+	logBody, logStatus, err := client.doRequest("GET", logPath, nil)
+	if err != nil {
+		return "", err
+	}
+	if logStatus != http.StatusOK {
+		return "", fmt.Errorf("get failed: %s status=%d", logPath, logStatus)
+	}
+	return string(logBody), nil
+}
+
+func deleteJob(client *kubeClient, ns, jobName string) error {
+	itemPath := namespacedPath("/apis/batch/v1", ns, "jobs", jobName)
+	_, status, err := client.doRequest("DELETE", itemPath, nil)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusNotFound {
+		return nil
+	}
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("delete failed: %s status=%d", itemPath, status)
+	}
+	return nil
 }
 
 type kubeClient struct {
@@ -839,7 +1387,50 @@ func mustInt64(value string) int64 {
 	return parsed
 }
 
-func updatePolicyStatus(client *kubeClient, policy BackupPolicy, status, reason, message string) error {
+func updateRestoreStatus(client *kubeClient, policy RestorePolicy, status, reason, message string) error {
+	if policy.Metadata.Name == "" || policy.Metadata.Namespace == "" {
+		return fmt.Errorf("missing policy name/namespace for status update")
+	}
+	statusPath := namespacedPath(
+		fmt.Sprintf("/apis/%s/%s", backupPolicyGroup, backupPolicyVersion),
+		policy.Metadata.Namespace,
+		"restorepolicies",
+		policy.Metadata.Name,
+	) + "/status"
+
+	condition := map[string]interface{}{
+		"type":               "Ready",
+		"status":             status,
+		"reason":             reason,
+		"message":            message,
+		"lastTransitionTime": time.Now().UTC().Format(time.RFC3339),
+	}
+
+	payload := map[string]interface{}{
+		"apiVersion": policy.APIVersion,
+		"kind":       policy.Kind,
+		"metadata": map[string]interface{}{
+			"name":            policy.Metadata.Name,
+			"namespace":       policy.Metadata.Namespace,
+			"resourceVersion": policy.Metadata.ResourceVersion,
+		},
+		"status": map[string]interface{}{
+			"observedGeneration": policy.Metadata.Generation,
+			"conditions":         []map[string]interface{}{condition},
+		},
+	}
+
+	_, updateStatus, err := client.doRequest("PUT", statusPath, payload)
+	if err != nil {
+		return err
+	}
+	if updateStatus < 200 || updateStatus >= 300 {
+		return fmt.Errorf("status update failed: %s status=%d", statusPath, updateStatus)
+	}
+	return nil
+}
+
+func updateBackupPolicyStatus(client *kubeClient, policy BackupPolicy, status, reason, message string, volumes []BackupPolicyVolumeStatus, lastSnapshotSync string) error {
 	if policy.Metadata.Name == "" || policy.Metadata.Namespace == "" {
 		return fmt.Errorf("missing policy name/namespace for status update")
 	}
@@ -869,6 +1460,8 @@ func updatePolicyStatus(client *kubeClient, policy BackupPolicy, status, reason,
 		"status": map[string]interface{}{
 			"observedGeneration": policy.Metadata.Generation,
 			"conditions":         []map[string]interface{}{condition},
+			"lastSnapshotSync":   lastSnapshotSync,
+			"volumes":            volumes,
 		},
 	}
 

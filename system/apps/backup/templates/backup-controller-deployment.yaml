@@ -80,6 +80,8 @@ spec:
               value: {{ .Values.backupController.runner.image | quote }}
             - name: RUNNER_IMAGE_PULL_POLICY
               value: {{ .Values.backupController.runner.imagePullPolicy | quote }}
+            - name: RESTIC_IMAGE
+              value: {{ .Values.backupController.restic.image | quote }}
             - name: SCALE_DOWN_TIMEOUT_SECONDS
               value: {{ .Values.backupController.timeouts.scaleDownSeconds | quote }}
             - name: EXPORT_TIMEOUT_SECONDS

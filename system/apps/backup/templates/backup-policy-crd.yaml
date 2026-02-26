@@ -66,6 +66,9 @@ spec:
                 observedGeneration:
                   type: integer
                   format: int64
+                lastSnapshotSync:
+                  type: string
+                  format: date-time
                 conditions:
                   type: array
                   items:
@@ -83,5 +86,31 @@ spec:
                       lastTransitionTime:
                         type: string
                         format: date-time
+                volumes:
+                  type: array
+                  items:
+                    type: object
+                    required: [pvc]
+                    properties:
+                      pvc:
+                        type: string
+                      lastSync:
+                        type: string
+                        format: date-time
+                      snapshots:
+                        type: array
+                        items:
+                          type: object
+                          required: [id, time, size, snippet]
+                          properties:
+                            id:
+                              type: string
+                            time:
+                              type: string
+                              format: date-time
+                            size:
+                              type: integer
+                            snippet:
+                              type: string
       subresources:
         status: {}

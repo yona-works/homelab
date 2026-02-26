@@ -34,6 +34,8 @@ backupController:
   runner:
     image: bitnami/kubectl:latest
     imagePullPolicy: IfNotPresent
+  restic:
+    image: restic/restic:0.18.0
   timeouts:
     scaleDownSeconds: 600
     exportSeconds: 3600
