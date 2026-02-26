@@ -1461,12 +1461,12 @@ func updateRestoreStatus(client *kubeClient, policy RestorePolicy, status, reaso
 		},
 	}
 
-	_, updateStatus, err := client.doRequest("PUT", statusPath, payload)
+	respBody, updateStatus, err := client.doRequest("PUT", statusPath, payload)
 	if err != nil {
 		return err
 	}
 	if updateStatus < 200 || updateStatus >= 300 {
-		return fmt.Errorf("status update failed: %s status=%d", statusPath, updateStatus)
+		return fmt.Errorf("status update failed: %s status=%d body=%s", statusPath, updateStatus, strings.TrimSpace(string(respBody)))
 	}
 	return nil
 }
@@ -1490,6 +1490,15 @@ func updateBackupPolicyStatus(client *kubeClient, policy BackupPolicy, status, r
 		"lastTransitionTime": time.Now().UTC().Format(time.RFC3339),
 	}
 
+	statusMap := map[string]interface{}{
+		"observedGeneration": policy.Metadata.Generation,
+		"conditions":         []map[string]interface{}{condition},
+		"volumes":            volumes,
+	}
+	if lastSnapshotSync != "" {
+		statusMap["lastSnapshotSync"] = lastSnapshotSync
+	}
+
 	payload := map[string]interface{}{
 		"apiVersion": policy.APIVersion,
 		"kind":       policy.Kind,
@@ -1498,20 +1507,15 @@ func updateBackupPolicyStatus(client *kubeClient, policy BackupPolicy, status, r
 			"namespace":       policy.Metadata.Namespace,
 			"resourceVersion": policy.Metadata.ResourceVersion,
 		},
-		"status": map[string]interface{}{
-			"observedGeneration": policy.Metadata.Generation,
-			"conditions":         []map[string]interface{}{condition},
-			"lastSnapshotSync":   lastSnapshotSync,
-			"volumes":            volumes,
-		},
+		"status": statusMap,
 	}
 
-	_, updateStatus, err := client.doRequest("PUT", statusPath, payload)
+	respBody, updateStatus, err := client.doRequest("PUT", statusPath, payload)
 	if err != nil {
 		return err
 	}
 	if updateStatus < 200 || updateStatus >= 300 {
-		return fmt.Errorf("status update failed: %s status=%d", statusPath, updateStatus)
+		return fmt.Errorf("status update failed: %s status=%d body=%s", statusPath, updateStatus, strings.TrimSpace(string(respBody)))
 	}
 	return nil
 }
