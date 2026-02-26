@@ -607,10 +607,11 @@ func ensureReplicationSource(client *kubeClient, cfg Config, ns, name, secretNam
 	}
 
 	if useMover {
+		mountPath := fmt.Sprintf("/mnt/%s", cfg.RepoMountPath)
 		if cfg.NFSEnabled {
 			resticSpec["moverVolumes"] = []map[string]interface{}{
 				{
-					"mountPath": cfg.RepoMountPath,
+					"mountPath": mountPath,
 					"volumeSource": map[string]interface{}{
 						"nfs": map[string]interface{}{
 							"server": cfg.NFSServer,
@@ -622,7 +623,7 @@ func ensureReplicationSource(client *kubeClient, cfg Config, ns, name, secretNam
 		} else {
 			resticSpec["moverVolumes"] = []map[string]interface{}{
 				{
-					"mountPath": cfg.RepoMountPath,
+					"mountPath": mountPath,
 					"volumeSource": map[string]interface{}{
 						"persistentVolumeClaim": map[string]interface{}{
 							"claimName": cfg.RepoPVCName,
@@ -667,10 +668,11 @@ func ensureReplicationDestination(client *kubeClient, cfg Config, ns, name, secr
 	if restoreAsOf != "" {
 		resticSpec["restoreAsOf"] = restoreAsOf
 	}
+	mountPath := fmt.Sprintf("/mnt/%s", cfg.RepoMountPath)
 	if cfg.NFSEnabled {
 		resticSpec["moverVolumes"] = []map[string]interface{}{
 			{
-				"mountPath": cfg.RepoMountPath,
+				"mountPath": mountPath,
 				"volumeSource": map[string]interface{}{
 					"nfs": map[string]interface{}{
 						"server": cfg.NFSServer,
@@ -682,7 +684,7 @@ func ensureReplicationDestination(client *kubeClient, cfg Config, ns, name, secr
 	} else {
 		resticSpec["moverVolumes"] = []map[string]interface{}{
 			{
-				"mountPath": cfg.RepoMountPath,
+				"mountPath": mountPath,
 				"volumeSource": map[string]interface{}{
 					"persistentVolumeClaim": map[string]interface{}{
 						"claimName": cfg.RepoPVCName,
