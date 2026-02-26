@@ -661,8 +661,19 @@ func ensureReplicationSource(client *kubeClient, cfg Config, ns, name, secretNam
 		},
 	}
 
-	return client.upsert(namespacedPath("/apis/volsync.backube/v1alpha1", ns, "replicationsources", name),
-		namespacedPath("/apis/volsync.backube/v1alpha1", ns, "replicationsources"), obj, &policy)
+	if err := client.upsert(namespacedPath("/apis/volsync.backube/v1alpha1", ns, "replicationsources", name),
+		namespacedPath("/apis/volsync.backube/v1alpha1", ns, "replicationsources"), obj, &policy); err != nil {
+		return err
+	}
+	verifyPath := namespacedPath("/apis/volsync.backube/v1alpha1", ns, "replicationsources", name)
+	body, status, err := client.doRequest("GET", verifyPath, nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("replicationsource verify failed: %s status=%d body=%s", verifyPath, status, strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 func ensureReplicationDestination(client *kubeClient, cfg Config, ns, name, secretName, pvc, restoreAsOf string, policy RestorePolicy) error {
