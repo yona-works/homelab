@@ -964,6 +964,19 @@ fi
 
 trigger_id="$(date -u +%Y%m%d%H%M%S)"
 for source in ${REPLICATION_SOURCES}; do
+  deadline="$(( $(date +%s) + 60 ))"
+  while true; do
+    if kubectl -n "${NAMESPACE}" get replicationsource "${source}" >/dev/null 2>&1; then
+      break
+    fi
+    if [ "$(date +%s)" -ge "${deadline}" ]; then
+      echo "ReplicationSource ${source} not found before trigger."
+      exit 1
+    fi
+    sleep 2
+  done
+done
+for source in ${REPLICATION_SOURCES}; do
   kubectl -n "${NAMESPACE}" patch replicationsource "${source}" --type merge -p "{\"spec\":{\"trigger\":{\"manual\":\"${trigger_id}\"}}}"
 done
 
