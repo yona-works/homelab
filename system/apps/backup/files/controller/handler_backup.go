@@ -366,7 +366,7 @@ func ensureReplicationSource(client *kubeClient, cfg Config, ns, name, secretNam
 	}
 
 	if useMover {
-		mountPath := fmt.Sprintf("/mnt/%s", cfg.RepoMountPath)
+		mountPath := cfg.RepoMountPath
 		resticSpec["moverVolumes"] = []map[string]interface{}{
 			{
 				"mountPath": mountPath,

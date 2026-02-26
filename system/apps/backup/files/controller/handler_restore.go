@@ -110,7 +110,7 @@ func ensureReplicationDestination(client *kubeClient, cfg Config, ns, name, secr
 	if restoreAsOf != "" {
 		resticSpec["restoreAsOf"] = restoreAsOf
 	}
-	mountPath := fmt.Sprintf("/mnt/%s", cfg.RepoMountPath)
+	mountPath := cfg.RepoMountPath
 	resticSpec["moverVolumes"] = []map[string]interface{}{
 		{
 			"mountPath": mountPath,
