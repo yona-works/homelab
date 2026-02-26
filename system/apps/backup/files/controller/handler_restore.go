@@ -290,7 +290,43 @@ func updateRestoreStatus(client *kubeClient, policy RestorePolicy, status, reaso
 		return err
 	}
 	if updateStatus < 200 || updateStatus >= 300 {
+		if updateStatus == http.StatusConflict {
+			latest, err := fetchRestorePolicy(client, policy.Metadata.Namespace, policy.Metadata.Name)
+			if err != nil {
+				return err
+			}
+			policy.Metadata.ResourceVersion = latest.Metadata.ResourceVersion
+			payload["metadata"].(map[string]interface{})["resourceVersion"] = policy.Metadata.ResourceVersion
+			respBody, updateStatus, err = client.doRequest("PUT", statusPath, payload)
+			if err != nil {
+				return err
+			}
+			if updateStatus >= 200 && updateStatus < 300 {
+				return nil
+			}
+		}
 		return fmt.Errorf("status update failed: %s status=%d body=%s", statusPath, updateStatus, strings.TrimSpace(string(respBody)))
 	}
 	return nil
+}
+
+func fetchRestorePolicy(client *kubeClient, ns, name string) (RestorePolicy, error) {
+	itemPath := namespacedPath(
+		fmt.Sprintf("/apis/%s/%s", backupPolicyGroup, backupPolicyVersion),
+		ns,
+		"restorepolicies",
+		name,
+	)
+	body, status, err := client.doRequest("GET", itemPath, nil)
+	if err != nil {
+		return RestorePolicy{}, err
+	}
+	if status != http.StatusOK {
+		return RestorePolicy{}, fmt.Errorf("get failed: %s status=%d", itemPath, status)
+	}
+	var policy RestorePolicy
+	if err := json.Unmarshal(body, &policy); err != nil {
+		return RestorePolicy{}, err
+	}
+	return policy, nil
 }

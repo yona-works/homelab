@@ -404,14 +404,6 @@ func ensureReplicationSource(client *kubeClient, cfg Config, ns, name, secretNam
 		namespacedPath("/apis/volsync.backube/v1alpha1", ns, "replicationsources"), obj, &policy); err != nil {
 		return err
 	}
-	verifyPath := namespacedPath("/apis/volsync.backube/v1alpha1", ns, "replicationsources", name)
-	body, status, err := client.doRequest("GET", verifyPath, nil)
-	if err != nil {
-		return err
-	}
-	if status != http.StatusOK {
-		return fmt.Errorf("replicationsource verify failed: %s status=%d body=%s", verifyPath, status, strings.TrimSpace(string(body)))
-	}
 	return nil
 }
 
@@ -895,7 +887,43 @@ func updateBackupPolicyStatus(client *kubeClient, policy BackupPolicy, status, r
 		return err
 	}
 	if updateStatus < 200 || updateStatus >= 300 {
+		if updateStatus == http.StatusConflict {
+			latest, err := fetchBackupPolicy(client, policy.Metadata.Namespace, policy.Metadata.Name)
+			if err != nil {
+				return err
+			}
+			policy.Metadata.ResourceVersion = latest.Metadata.ResourceVersion
+			payload["metadata"].(map[string]interface{})["resourceVersion"] = policy.Metadata.ResourceVersion
+			respBody, updateStatus, err = client.doRequest("PUT", statusPath, payload)
+			if err != nil {
+				return err
+			}
+			if updateStatus >= 200 && updateStatus < 300 {
+				return nil
+			}
+		}
 		return fmt.Errorf("status update failed: %s status=%d body=%s", statusPath, updateStatus, strings.TrimSpace(string(respBody)))
 	}
 	return nil
+}
+
+func fetchBackupPolicy(client *kubeClient, ns, name string) (BackupPolicy, error) {
+	itemPath := namespacedPath(
+		fmt.Sprintf("/apis/%s/%s", backupPolicyGroup, backupPolicyVersion),
+		ns,
+		"backuppolicies",
+		name,
+	)
+	body, status, err := client.doRequest("GET", itemPath, nil)
+	if err != nil {
+		return BackupPolicy{}, err
+	}
+	if status != http.StatusOK {
+		return BackupPolicy{}, fmt.Errorf("get failed: %s status=%d", itemPath, status)
+	}
+	var policy BackupPolicy
+	if err := json.Unmarshal(body, &policy); err != nil {
+		return BackupPolicy{}, err
+	}
+	return policy, nil
 }
