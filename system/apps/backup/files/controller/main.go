@@ -920,6 +920,11 @@ set -euo pipefail
 
 scaled_file="$(mktemp)"
 
+echo "Backup job starting in namespace ${NAMESPACE}"
+echo "Replication sources: ${REPLICATION_SOURCES}"
+echo "Scale down targets: ${SCALE_DOWN_TARGETS:-<none>}"
+echo "Export job: ${EXPORT_JOB_NAME:-<none>}"
+
 cleanup() {
   if [ -s "${scaled_file}" ]; then
     while read -r target replicas; do
@@ -964,15 +969,19 @@ fi
 
 trigger_id="$(date -u +%Y%m%d%H%M%S)"
 for source in ${REPLICATION_SOURCES}; do
-  deadline="$(( $(date +%s) + 60 ))"
+  echo "Waiting for ReplicationSource ${source} to exist..."
+  deadline="$(( $(date +%s) + 300 ))"
   while true; do
     if kubectl -n "${NAMESPACE}" get replicationsource "${source}" >/dev/null 2>&1; then
       break
     fi
     if [ "$(date +%s)" -ge "${deadline}" ]; then
       echo "ReplicationSource ${source} not found before trigger."
+      echo "Available ReplicationSources:"
+      kubectl -n "${NAMESPACE}" get replicationsources -o name || true
       exit 1
     fi
+    echo "ReplicationSource ${source} not found yet, retrying..."
     sleep 2
   done
 done
