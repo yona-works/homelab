@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -138,12 +139,16 @@ const (
 	backupPolicyVersion = "v1alpha1"
 )
 
+var reconcileHealthy atomic.Bool
+
 func main() {
 	cfg := loadConfig()
 	client, err := newKubeClient()
 	if err != nil {
 		panic(err)
 	}
+
+	go startHealthServer()
 
 	for {
 		reconcile(client, cfg)
@@ -189,20 +194,27 @@ func loadConfig() Config {
 func reconcile(client *kubeClient, cfg Config) {
 	start := time.Now()
 	fmt.Println("reconcile: starting")
+	ok := true
 	listPath := fmt.Sprintf("/apis/%s/%s/backuppolicies", backupPolicyGroup, backupPolicyVersion)
 	body, status, err := client.doRequest("GET", listPath, nil)
 	if err != nil {
 		fmt.Printf("failed to list BackupPolicies: %v\n", err)
+		ok = false
+		reconcileHealthy.Store(ok)
 		return
 	}
 	if status != http.StatusOK {
 		fmt.Printf("failed to list BackupPolicies: status=%d\n", status)
+		ok = false
+		reconcileHealthy.Store(ok)
 		return
 	}
 
 	var list BackupPolicyList
 	if err := json.Unmarshal(body, &list); err != nil {
 		fmt.Printf("failed to parse BackupPolicies: %v\n", err)
+		ok = false
+		reconcileHealthy.Store(ok)
 		return
 	}
 	fmt.Printf("reconcile: found %d BackupPolicies\n", len(list.Items))
@@ -211,12 +223,15 @@ func reconcile(client *kubeClient, cfg Config) {
 		volStatus, lastSnapshotSync, err := reconcilePolicy(client, cfg, policy)
 		if err != nil {
 			fmt.Printf("reconcile failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
+			ok = false
 			if err := updateBackupPolicyStatus(client, policy, "False", "ReconcileError", err.Error(), volStatus, lastSnapshotSync); err != nil {
 				fmt.Printf("status update failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
+				ok = false
 			}
 		} else {
 			if err := updateBackupPolicyStatus(client, policy, "True", "Reconciled", "Reconcile successful", volStatus, lastSnapshotSync); err != nil {
 				fmt.Printf("status update failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
+				ok = false
 			}
 		}
 	}
@@ -225,16 +240,22 @@ func reconcile(client *kubeClient, cfg Config) {
 	restoreBody, restoreStatus, restoreErr := client.doRequest("GET", restoreListPath, nil)
 	if restoreErr != nil {
 		fmt.Printf("failed to list RestorePolicies: %v\n", restoreErr)
+		ok = false
+		reconcileHealthy.Store(ok)
 		return
 	}
 	if restoreStatus != http.StatusOK {
 		fmt.Printf("failed to list RestorePolicies: status=%d\n", restoreStatus)
+		ok = false
+		reconcileHealthy.Store(ok)
 		return
 	}
 
 	var restoreList RestorePolicyList
 	if err := json.Unmarshal(restoreBody, &restoreList); err != nil {
 		fmt.Printf("failed to parse RestorePolicies: %v\n", err)
+		ok = false
+		reconcileHealthy.Store(ok)
 		return
 	}
 	fmt.Printf("reconcile: found %d RestorePolicies\n", len(restoreList.Items))
@@ -242,16 +263,20 @@ func reconcile(client *kubeClient, cfg Config) {
 	for _, policy := range restoreList.Items {
 		if err := reconcileRestorePolicy(client, cfg, policy); err != nil {
 			fmt.Printf("restore reconcile failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
+			ok = false
 			if err := updateRestoreStatus(client, policy, "False", "ReconcileError", err.Error()); err != nil {
 				fmt.Printf("restore status update failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
+				ok = false
 			}
 		} else {
 			if err := updateRestoreStatus(client, policy, "True", "Reconciled", "Reconcile successful"); err != nil {
 				fmt.Printf("restore status update failed for %s/%s: %v\n", policy.Metadata.Namespace, policy.Metadata.Name, err)
+				ok = false
 			}
 		}
 	}
 	fmt.Printf("reconcile: completed in %s\n", time.Since(start).Truncate(time.Millisecond))
+	reconcileHealthy.Store(ok)
 }
 
 func reconcilePolicy(client *kubeClient, cfg Config, policy BackupPolicy) ([]BackupPolicyVolumeStatus, string, error) {
@@ -1489,4 +1514,23 @@ func updateBackupPolicyStatus(client *kubeClient, policy BackupPolicy, status, r
 		return fmt.Errorf("status update failed: %s status=%d", statusPath, updateStatus)
 	}
 	return nil
+}
+
+func startHealthServer() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		if reconcileHealthy.Load() {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+	server := &http.Server{
+		Addr:              ":8080",
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil {
+		fmt.Printf("health server stopped: %v\n", err)
+	}
 }
