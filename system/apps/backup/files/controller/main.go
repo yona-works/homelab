@@ -312,11 +312,11 @@ func reconcilePolicy(client *kubeClient, cfg Config, policy BackupPolicy) ([]Bac
 			return volumeStatuses, lastSnapshotSync, err
 		}
 		if endTime != "" {
-			statusEntry.LastSync = endTime
+			statusEntry.LastSync = normalizeTime(endTime)
 		}
 
 		if result == "Successful" && endTime != "" {
-			if !hasExisting || existingEntry.LastSync != endTime || len(existingEntry.Snapshots) == 0 {
+			if !hasExisting || existingEntry.LastSync != statusEntry.LastSync || len(existingEntry.Snapshots) == 0 {
 				snapshots, err := fetchSnapshots(client, cfg, ns, policy.Metadata.Name, vol.PVC, secretName)
 				if err != nil {
 					return volumeStatuses, lastSnapshotSync, err
@@ -1006,6 +1006,22 @@ func getReplicationSourceStatus(client *kubeClient, ns, name string) (string, st
 		endTime = manual
 	}
 	return result, endTime, nil
+}
+
+func normalizeTime(value string) string {
+	if value == "" {
+		return ""
+	}
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return parsed.UTC().Format(time.RFC3339)
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return parsed.UTC().Format(time.RFC3339)
+	}
+	if parsed, err := time.Parse("20060102150405", value); err == nil {
+		return parsed.UTC().Format(time.RFC3339)
+	}
+	return ""
 }
 
 func fetchSnapshots(client *kubeClient, cfg Config, ns, policyName, pvc, secretName string) ([]BackupSnapshot, error) {
