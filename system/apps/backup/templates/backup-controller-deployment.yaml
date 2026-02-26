@@ -97,6 +97,9 @@ spec:
           volumeMounts:
             - name: source
               mountPath: /go/src/backup-controller
+          ports:
+            - name: health
+              containerPort: 8080
           readinessProbe:
             httpGet:
               path: /healthz

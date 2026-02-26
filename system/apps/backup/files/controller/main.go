@@ -1534,6 +1534,7 @@ func startHealthServer() {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+	fmt.Println("health server starting on :8080")
 	if err := server.ListenAndServe(); err != nil {
 		fmt.Printf("health server stopped: %v\n", err)
 	}
