@@ -12,7 +12,7 @@ metadata:
 rules:
   - apiGroups: ["backup.homelab"]
     resources: ["backuppolicies"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "patch", "update"]
   - apiGroups: ["backup.homelab"]
     resources: ["backuppolicies/status"]
     verbs: ["get", "update", "patch"]
@@ -24,7 +24,7 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch"]
   - apiGroups: ["backup.homelab"]
     resources: ["restorepolicies"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "patch", "update"]
   - apiGroups: ["backup.homelab"]
     resources: ["restorepolicies/status"]
     verbs: ["get", "update", "patch"]
