@@ -1004,6 +1004,9 @@ func getReplicationSourceStatus(client *kubeClient, ns, name string) (string, st
 	if err != nil {
 		return "", "", err
 	}
+	if status == http.StatusNotFound {
+		return "", "", nil
+	}
 	if status != http.StatusOK {
 		return "", "", fmt.Errorf("get failed: %s status=%d", itemPath, status)
 	}
