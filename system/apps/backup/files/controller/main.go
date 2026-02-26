@@ -289,6 +289,8 @@ func reconcilePolicy(client *kubeClient, cfg Config, policy BackupPolicy) ([]Bac
 		policy.Kind = "BackupPolicy"
 	}
 
+	fmt.Printf("reconcile policy %s/%s: %d volumes\n", ns, name, len(policy.Spec.Volumes))
+
 	if !cfg.NFSEnabled {
 		if err := ensureRepoPVC(client, cfg, ns); err != nil {
 			return nil, policy.Status.LastSnapshotSync, err
@@ -312,14 +314,18 @@ func reconcilePolicy(client *kubeClient, cfg Config, policy BackupPolicy) ([]Bac
 
 	for _, vol := range policy.Spec.Volumes {
 		if vol.PVC == "" {
+			fmt.Printf("reconcile policy %s/%s: skipping empty pvc entry\n", ns, name)
 			continue
 		}
+		fmt.Printf("reconcile policy %s/%s: ensuring volume %s\n", ns, name, vol.PVC)
 		baseName := sanitizeName(fmt.Sprintf("backup-%s-%s", name, vol.PVC))
 		secretName := sanitizeName(fmt.Sprintf("backup-repo-%s-%s", name, vol.PVC))
 
+		fmt.Printf("reconcile policy %s/%s: ensuring ExternalSecret %s\n", ns, name, secretName)
 		if err := ensureExternalSecret(client, cfg, ns, secretName, vol.PVC, false, policy); err != nil {
 			return volumeStatuses, lastSnapshotSync, err
 		}
+		fmt.Printf("reconcile policy %s/%s: ensuring ReplicationSource %s\n", ns, name, baseName)
 		if err := ensureReplicationSource(client, cfg, ns, baseName, secretName, vol.PVC, policy, true); err != nil {
 			return volumeStatuses, lastSnapshotSync, err
 		}
